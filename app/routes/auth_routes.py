@@ -44,7 +44,7 @@ async def login_page(request: Request):
 async def dashboard_page(request: Request):
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
-        "api_base": str(request.base_url).rstrip("/"),
+        "api_base": "",
     })
 
 
@@ -52,7 +52,7 @@ async def dashboard_page(request: Request):
 async def create_page(request: Request):
     return templates.TemplateResponse("create.html", {
         "request": request,
-        "api_base": str(request.base_url).rstrip("/"),
+        "api_base": "",
     })
 
 
@@ -60,7 +60,7 @@ async def create_page(request: Request):
 async def edit_page(request: Request, presentation_id: str):
     return templates.TemplateResponse("edit.html", {
         "request": request,
-        "api_base": str(request.base_url).rstrip("/"),
+        "api_base": "",
         "presentation_id": presentation_id,
     })
 

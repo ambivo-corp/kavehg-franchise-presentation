@@ -39,7 +39,6 @@ async def serve_page(slug: str, request: Request):
             )
 
     html_content = render_markdown(doc["markdown_content"])
-    api_base = str(request.base_url).rstrip("/")
 
     return templates.TemplateResponse(
         "page.html",
@@ -50,7 +49,7 @@ async def serve_page(slug: str, request: Request):
             "html_content": html_content,
             "presentation_id": str(doc["_id"]),
             "chat_enabled": "true" if doc.get("chat_enabled", True) else "false",
-            "api_base": api_base,
+            "api_base": "",
         },
     )
 

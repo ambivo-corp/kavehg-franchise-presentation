@@ -52,15 +52,6 @@ app.include_router(public.router)
 app.include_router(chat.router)
 
 
-@app.get("/")
-async def root():
-    return {
-        "service": settings.app_name,
-        "version": settings.app_version,
-        "status": "running",
-    }
-
-
 if __name__ == "__main__":
     import uvicorn
 
