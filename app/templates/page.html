@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }}</title>
+  {% if description %}<meta name="description" content="{{ description }}">{% endif %}
+  <link rel="stylesheet" href="/static/css/page.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+</head>
+<body>
+  <article class="content">
+    {{ html_content | safe }}
+  </article>
+
+  <footer class="powered-by">
+    <a href="https://www.ambivo.com" target="_blank" rel="noopener">
+      <img src="/static/img/ambivo-logo.png" alt="Ambivo" class="powered-by-logo">
+      <span>Powered by Ambivo</span>
+    </a>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>hljs.highlightAll();</script>
+  <script>
+  // Hide broken images
+  document.querySelectorAll(".content img").forEach(function(img) {
+    img.addEventListener("error", function() { img.classList.add("broken"); });
+    // Handle already-failed images (cached failures)
+    if (img.complete && img.naturalWidth === 0 && img.src) { img.classList.add("broken"); }
+  });
+  </script>
+
+  <script
+    src="/static/js/chat-widget.js"
+    data-presentation-id="{{ presentation_id }}"
+    data-chat-enabled="{{ chat_enabled }}"
+    data-api-base="{{ api_base }}"
+  ></script>
+</body>
+</html>

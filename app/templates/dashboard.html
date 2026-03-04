@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Ambivo Content Portal</title>
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body data-api="{{ api_base }}">
+  <nav>
+    <a class="brand" href="/dashboard">Content Portal</a>
+    <div class="user-area">
+      <span id="userName"></span>
+      <button class="btn-sm btn-ghost" onclick="logout()">Sign out</button>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="header-row">
+      <h2>Presentations</h2>
+      <a class="btn-sm btn-primary" href="/dashboard/create">+ New Presentation</a>
+    </div>
+
+    <div class="table-wrap">
+      <div class="loading" id="loading">Loading...</div>
+      <table id="table" style="display:none">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Slug</th>
+            <th>Status</th>
+            <th>Chat</th>
+            <th>Created</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty" id="empty" style="display:none">No presentations yet. Create your first one!</div>
+    </div>
+  </div>
+
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
