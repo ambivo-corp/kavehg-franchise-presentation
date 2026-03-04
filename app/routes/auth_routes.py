@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 import httpx
 from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -22,6 +22,17 @@ class LoginRequest(BaseModel):
     password: str
     device_id: str | None = None
     os: str = "web"
+
+
+@router.get("/", response_class=HTMLResponse)
+async def root_redirect(request: Request):
+    """Redirect to dashboard or login based on client-side auth check."""
+    return HTMLResponse(
+        '<script>'
+        'if(localStorage.getItem("cp_token")){window.location.replace("/dashboard")}'
+        'else{window.location.replace("/login")}'
+        '</script>'
+    )
 
 
 @router.get("/login", response_class=HTMLResponse)
