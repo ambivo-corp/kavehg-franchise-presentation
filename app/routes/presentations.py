@@ -92,6 +92,44 @@ async def toggle_publish(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.get("/{presentation_id}/queries")
+async def list_chat_queries(
+    presentation_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+    page: int = 1,
+    page_size: int = 25,
+):
+    try:
+        return await presentation_service.list_chat_queries(
+            presentation_id, user["tenant_id"], page, page_size
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/{presentation_id}/queries/{query_id}", status_code=204)
+async def delete_chat_query(
+    presentation_id: str,
+    query_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        await presentation_service.delete_chat_query(query_id, presentation_id, user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/{presentation_id}/queries", status_code=204)
+async def delete_all_chat_queries(
+    presentation_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        await presentation_service.delete_all_chat_queries(presentation_id, user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.post("/{presentation_id}/logo", response_model=PresentationResponse)
 async def upload_logo(
     presentation_id: str,

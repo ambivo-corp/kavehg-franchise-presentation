@@ -595,6 +595,113 @@
       });
     }
 
+    // ── Chat Queries Modal ──
+    var queriesModal = document.getElementById("queriesModal");
+    var queriesCurrentPage = 1;
+    var queriesPageSize = 25;
+
+    function loadQueries(page) {
+      queriesCurrentPage = page;
+      var body = document.getElementById("queriesBody");
+      body.innerHTML = '<div class="loading">Loading...</div>';
+
+      fetch(API + "/api/presentations/" + editId + "/queries?page=" + page + "&page_size=" + queriesPageSize, {
+        headers: authHeaders(),
+      })
+        .then(handleAuth)
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.items || !data.items.length) {
+            body.innerHTML = '<p style="color:#9ca3af;text-align:center;padding:2rem 0">No queries recorded yet.</p>';
+            document.getElementById("queriesFooter").style.display = "none";
+            return;
+          }
+          var html = '<table class="query-table"><thead><tr>' +
+            '<th>Question</th><th>Date / Time</th><th>IP</th><th>Code</th><th></th>' +
+            '</tr></thead><tbody>';
+          data.items.forEach(function (q) {
+            var ts = q.created_at ? new Date(q.created_at).toLocaleString() : q.date;
+            html += '<tr>' +
+              '<td class="q-text" title="' + esc(q.question) + '">' + esc(q.question) + '</td>' +
+              '<td class="q-meta">' + esc(ts) + '</td>' +
+              '<td class="q-meta">' + esc(q.client_ip) + '</td>' +
+              '<td class="q-meta">' + esc(q.access_code || '—') + '</td>' +
+              '<td><button class="btn-danger-sm" data-del-query="' + q.id + '" title="Delete">&times;</button></td>' +
+              '</tr>';
+          });
+          html += '</tbody></table>';
+          body.innerHTML = html;
+
+          // Pagination
+          var totalPages = Math.ceil(data.total / data.page_size);
+          var footer = document.getElementById("queriesFooter");
+          footer.style.display = totalPages > 1 ? "" : "none";
+          document.getElementById("queriesPageInfo").textContent = "Page " + data.page + " of " + totalPages;
+          document.getElementById("btnQueriesPrev").disabled = data.page <= 1;
+          document.getElementById("btnQueriesNext").disabled = data.page >= totalPages;
+        })
+        .catch(function (err) {
+          body.innerHTML = '<p style="color:#b91c1c;text-align:center">Error: ' + esc(err.message) + '</p>';
+        });
+    }
+
+    // Open modal on stat click
+    var statQueriesWrap = document.getElementById("statQueriesWrap");
+    if (statQueriesWrap && queriesModal) {
+      statQueriesWrap.addEventListener("click", function () {
+        queriesModal.style.display = "";
+        loadQueries(1);
+      });
+    }
+
+    // Close modal
+    var btnCloseQueries = document.getElementById("btnCloseQueries");
+    if (btnCloseQueries) {
+      btnCloseQueries.addEventListener("click", function () { queriesModal.style.display = "none"; });
+    }
+    if (queriesModal) {
+      queriesModal.addEventListener("click", function (e) {
+        if (e.target === queriesModal) queriesModal.style.display = "none";
+      });
+    }
+
+    // Pagination buttons
+    var btnPrev = document.getElementById("btnQueriesPrev");
+    var btnNext = document.getElementById("btnQueriesNext");
+    if (btnPrev) btnPrev.addEventListener("click", function () { loadQueries(queriesCurrentPage - 1); });
+    if (btnNext) btnNext.addEventListener("click", function () { loadQueries(queriesCurrentPage + 1); });
+
+    // Delete single query (delegation)
+    var queriesBody = document.getElementById("queriesBody");
+    if (queriesBody) {
+      queriesBody.addEventListener("click", function (e) {
+        var qid = e.target.dataset.delQuery;
+        if (!qid) return;
+        fetch(API + "/api/presentations/" + editId + "/queries/" + qid, {
+          method: "DELETE", headers: authHeaders(),
+        })
+          .then(handleAuth)
+          .then(function () { loadQueries(queriesCurrentPage); });
+      });
+    }
+
+    // Clear all queries
+    var btnClearAll = document.getElementById("btnClearAllQueries");
+    if (btnClearAll) {
+      btnClearAll.addEventListener("click", function () {
+        if (!confirm("Delete ALL chat queries for this presentation? This cannot be undone.")) return;
+        fetch(API + "/api/presentations/" + editId + "/queries", {
+          method: "DELETE", headers: authHeaders(),
+        })
+          .then(handleAuth)
+          .then(function () {
+            loadQueries(1);
+            document.getElementById("statQueries").textContent = "0";
+            document.getElementById("statToday").textContent = "0";
+          });
+      });
+    }
+
     editForm.addEventListener("submit", function (e) {
       e.preventDefault();
       var errEl = document.getElementById("formError");

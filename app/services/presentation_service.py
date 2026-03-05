@@ -366,6 +366,65 @@ async def delete_logo(presentation_id: str, tenant_id: str, base_url: str = "") 
     return _doc_to_response(doc, base_url)
 
 
+CHAT_QUERIES_COLLECTION = "content_chat_queries"
+
+
+async def list_chat_queries(
+    presentation_id: str, tenant_id: str, page: int = 1, page_size: int = 25,
+) -> dict:
+    """Return paginated chat queries for a presentation."""
+    coll_p = get_db()[COLLECTION]
+    doc = await coll_p.find_one(
+        {"_id": ObjectId(presentation_id), "tenant_id": tenant_id}, {"_id": 1}
+    )
+    if not doc:
+        raise ValueError("Presentation not found")
+
+    coll = get_db()[CHAT_QUERIES_COLLECTION]
+    filt = {"presentation_id": presentation_id}
+    total = await coll.count_documents(filt)
+    skip = (page - 1) * page_size
+    cursor = coll.find(filt).sort("created_at", -1).skip(skip).limit(page_size)
+    items = []
+    async for q in cursor:
+        items.append({
+            "id": str(q["_id"]),
+            "question": q.get("question", ""),
+            "client_ip": q.get("client_ip", ""),
+            "access_code": q.get("access_code"),
+            "session_id": q.get("session_id", ""),
+            "date": q.get("date", ""),
+            "created_at": q["created_at"].isoformat() if isinstance(q.get("created_at"), datetime) else str(q.get("created_at", "")),
+        })
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+async def delete_chat_query(query_id: str, presentation_id: str, tenant_id: str) -> bool:
+    """Delete a single chat query (after verifying ownership)."""
+    coll_p = get_db()[COLLECTION]
+    doc = await coll_p.find_one(
+        {"_id": ObjectId(presentation_id), "tenant_id": tenant_id}, {"_id": 1}
+    )
+    if not doc:
+        raise ValueError("Presentation not found")
+    coll = get_db()[CHAT_QUERIES_COLLECTION]
+    result = await coll.delete_one({"_id": ObjectId(query_id), "presentation_id": presentation_id})
+    return result.deleted_count > 0
+
+
+async def delete_all_chat_queries(presentation_id: str, tenant_id: str) -> int:
+    """Delete all chat queries for a presentation."""
+    coll_p = get_db()[COLLECTION]
+    doc = await coll_p.find_one(
+        {"_id": ObjectId(presentation_id), "tenant_id": tenant_id}, {"_id": 1}
+    )
+    if not doc:
+        raise ValueError("Presentation not found")
+    coll = get_db()[CHAT_QUERIES_COLLECTION]
+    result = await coll.delete_many({"presentation_id": presentation_id})
+    return result.deleted_count
+
+
 async def get_logo(slug: str) -> tuple[bytes, str] | None:
     """Return (binary_data, content_type) or None."""
     coll = get_db()[COLLECTION]
