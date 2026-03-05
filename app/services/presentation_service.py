@@ -273,6 +273,15 @@ async def delete(presentation_id: str, tenant_id: str) -> bool:
         logger.exception(f"KB deletion failed for {doc['kb_name']}")
 
     await coll.delete_one({"_id": doc["_id"]})
+
+    # Clean up chat queries
+    try:
+        result = await get_db()[CHAT_QUERIES_COLLECTION].delete_many({"presentation_id": presentation_id})
+        if result.deleted_count:
+            logger.info(f"Deleted {result.deleted_count} chat queries for presentation {presentation_id}")
+    except Exception:
+        logger.exception(f"Failed to delete chat queries for presentation {presentation_id}")
+
     logger.info(f"Deleted presentation {presentation_id} kb={doc['kb_name']}")
     return True
 
