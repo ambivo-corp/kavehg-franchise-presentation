@@ -40,6 +40,10 @@ class PresentationResponse(BaseModel):
     tags: list[str] = []
     created_at: str
     updated_at: str
+    # Stats
+    num_views: int = 0
+    total_chat_queries: int = 0
+    today_chat_queries: int = 0
 
 
 class PresentationDetail(PresentationResponse):

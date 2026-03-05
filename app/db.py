@@ -20,6 +20,19 @@ async def connect_db():
     await client.admin.command("ping")
     logger.info(f"Connected to MongoDB database: {settings.mongodb_database}")
 
+    # Ensure indexes for content_chat_queries
+    chat_queries = db["content_chat_queries"]
+    await chat_queries.create_index(
+        [("presentation_id", 1), ("date", 1)],
+        name="idx_presentation_date",
+    )
+    await chat_queries.create_index(
+        "created_at",
+        name="idx_created_at_ttl",
+        expireAfterSeconds=90 * 24 * 3600,  # auto-delete after 90 days
+    )
+    logger.info("Ensured indexes on content_chat_queries")
+
 
 async def close_db():
     global client

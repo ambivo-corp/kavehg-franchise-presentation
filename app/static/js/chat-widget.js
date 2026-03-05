@@ -95,7 +95,12 @@
       body: body,
     })
       .then(function (resp) {
-        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        if (!resp.ok) {
+          return resp.json().catch(function () { return {}; }).then(function (body) {
+            var msg = body.detail || "HTTP " + resp.status;
+            throw new Error(msg);
+          });
+        }
         if (typingEl.parentNode) typingEl.remove();
 
         var assistantEl = appendMsg("assistant", "");
@@ -165,9 +170,9 @@
           input.focus();
         }
       })
-      .catch(function () {
+      .catch(function (err) {
         if (typingEl.parentNode) typingEl.remove();
-        appendMsg("assistant", "Sorry, something went wrong. Please try again.");
+        appendMsg("assistant", err.message || "Sorry, something went wrong. Please try again.");
         isStreaming = false;
         sendBtn.disabled = false;
       });

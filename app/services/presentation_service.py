@@ -33,7 +33,8 @@ def _kb_name(tenant_id: str, slug: str) -> str:
     return f"content_{tenant_id[:8]}_{slug}"
 
 
-def _doc_to_response(doc: dict, base_url: str = "") -> PresentationResponse:
+def _doc_to_response(doc: dict, base_url: str = "", stats: dict | None = None) -> PresentationResponse:
+    s = stats or {}
     return PresentationResponse(
         id=str(doc["_id"]),
         tenant_id=doc["tenant_id"],
@@ -49,10 +50,14 @@ def _doc_to_response(doc: dict, base_url: str = "") -> PresentationResponse:
         tags=doc.get("tags", []),
         created_at=doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else str(doc["created_at"]),
         updated_at=doc["updated_at"].isoformat() if isinstance(doc["updated_at"], datetime) else str(doc["updated_at"]),
+        num_views=doc.get("num_views", 0),
+        total_chat_queries=s.get("total", 0),
+        today_chat_queries=s.get("today", 0),
     )
 
 
-def _doc_to_detail(doc: dict, base_url: str = "") -> PresentationDetail:
+def _doc_to_detail(doc: dict, base_url: str = "", stats: dict | None = None) -> PresentationDetail:
+    s = stats or {}
     return PresentationDetail(
         id=str(doc["_id"]),
         tenant_id=doc["tenant_id"],
@@ -69,7 +74,37 @@ def _doc_to_detail(doc: dict, base_url: str = "") -> PresentationDetail:
         created_at=doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else str(doc["created_at"]),
         updated_at=doc["updated_at"].isoformat() if isinstance(doc["updated_at"], datetime) else str(doc["updated_at"]),
         markdown_content=doc.get("markdown_content", ""),
+        num_views=doc.get("num_views", 0),
+        total_chat_queries=s.get("total", 0),
+        today_chat_queries=s.get("today", 0),
     )
+
+
+async def _chat_query_stats(presentation_ids: list[str]) -> dict[str, dict]:
+    """Return {presentation_id: {"total": N, "today": N}} for the given IDs."""
+    if not presentation_ids:
+        return {}
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    coll = get_db()["content_chat_queries"]
+
+    # Total counts per presentation
+    pipeline_total = [
+        {"$match": {"presentation_id": {"$in": presentation_ids}}},
+        {"$group": {"_id": "$presentation_id", "total": {"$sum": 1}}},
+    ]
+    # Today counts per presentation
+    pipeline_today = [
+        {"$match": {"presentation_id": {"$in": presentation_ids}, "date": today}},
+        {"$group": {"_id": "$presentation_id", "today": {"$sum": 1}}},
+    ]
+
+    totals = {r["_id"]: r["total"] async for r in coll.aggregate(pipeline_total)}
+    todays = {r["_id"]: r["today"] async for r in coll.aggregate(pipeline_today)}
+
+    return {
+        pid: {"total": totals.get(pid, 0), "today": todays.get(pid, 0)}
+        for pid in presentation_ids
+    }
 
 
 async def _ensure_indexes():
@@ -213,7 +248,10 @@ async def toggle_publish(presentation_id: str, tenant_id: str, base_url: str = "
 async def get_by_id(presentation_id: str, tenant_id: str, base_url: str = "") -> PresentationDetail | None:
     coll = get_db()[COLLECTION]
     doc = await coll.find_one({"_id": ObjectId(presentation_id), "tenant_id": tenant_id})
-    return _doc_to_detail(doc, base_url) if doc else None
+    if not doc:
+        return None
+    stats = await _chat_query_stats([presentation_id])
+    return _doc_to_detail(doc, base_url, stats.get(presentation_id))
 
 
 async def get_by_slug(slug: str) -> dict | None:
@@ -224,4 +262,6 @@ async def get_by_slug(slug: str) -> dict | None:
 async def list_by_tenant(tenant_id: str, base_url: str = "") -> list[PresentationResponse]:
     coll = get_db()[COLLECTION]
     docs = await coll.find({"tenant_id": tenant_id}).sort("created_at", -1).to_list(500)
-    return [_doc_to_response(d, base_url) for d in docs]
+    pids = [str(d["_id"]) for d in docs]
+    stats = await _chat_query_stats(pids)
+    return [_doc_to_response(d, base_url, stats.get(str(d["_id"]))) for d in docs]

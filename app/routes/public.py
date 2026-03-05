@@ -1,13 +1,19 @@
 """
 Public page serving — no auth required
 """
+import logging
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from app.db import get_db
 from app.services import presentation_service
 from app.services.md_renderer import render_markdown
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -37,6 +43,24 @@ async def serve_page(slug: str, request: Request):
                     "slug": slug,
                 },
             )
+
+    # Track page view (fire-and-forget)
+    client_ip = request.client.host if request.client else "unknown"
+    access_code = request.cookies.get(f"cp_access_{slug}")
+    try:
+        coll = get_db()["content_presentations"]
+        view_set: dict = {
+            "last_view_date": datetime.now(timezone.utc).isoformat(),
+            "last_view_ip": client_ip,
+        }
+        if access_code:
+            view_set["last_view_access_code"] = access_code
+        await coll.update_one(
+            {"_id": doc["_id"]},
+            {"$inc": {"num_views": 1}, "$set": view_set},
+        )
+    except Exception as exc:
+        logger.warning("Failed to track page view for slug=%s: %s", slug, exc)
 
     html_content = render_markdown(doc["markdown_content"])
 

@@ -281,3 +281,17 @@ tr:last-child td { border-bottom: none; }
 }
 .access-codes-display { margin-bottom: .5rem; }
 .access-codes-display label { display: block; font-size: .85rem; font-weight: 500; color: #374151; }
+
+/* ── Stats bar ── */
+.stats-bar {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.25rem;
+  padding: .75rem 1rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+.stat-item { display: flex; flex-direction: column; align-items: center; min-width: 70px; }
+.stat-value { font-size: 1.4rem; font-weight: 700; color: #1f2937; }
+.stat-label { font-size: .75rem; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }

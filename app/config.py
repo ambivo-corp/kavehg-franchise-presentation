@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Core API (ambivo_api) — for login proxy
     ambivo_api_url: str = "https://goferapi.ambivo.com"
 
+    # Chat limits
+    daily_chat_limit: int = 20
+
     # Logging
     log_level: str = "INFO"
 

@@ -11,9 +11,11 @@ from collections import defaultdict
 from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
+from app.config import settings
 from app.db import get_db
 from app.models.presentation import ChatRequest
 from app.services import kb_service
+from app.services.quota_service import check_genai_quota, check_daily_chat_limit, record_chat_query
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -51,10 +53,35 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
     tenant_id = doc["tenant_id"]
     user_id = doc.get("userid") or doc.get("user_id", "")
     session_id = body.session_id or uuid.uuid4().hex
+    access_code = request.cookies.get(f"cp_access_{doc['slug']}")
+
+    # --- Quota & limit checks ---
+    quota = await check_genai_quota(tenant_id)
+    if not quota.get("allowed", True):
+        raise HTTPException(
+            status_code=402,
+            detail=quota.get("error", "GenAI quota exhausted. Please add a payment method."),
+        )
+
+    if not await check_daily_chat_limit(presentation_id):
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily chat limit ({settings.daily_chat_limit} queries) reached for this page. Try again tomorrow.",
+        )
 
     async def event_generator():
         # Send session_id first so client can cache it for conversation memory
         yield {"event": "session", "data": session_id}
+
+        # Record the chat query (fire-and-forget inside the stream)
+        try:
+            await record_chat_query(
+                presentation_id, tenant_id, kb_name, session_id, body.message, client_ip,
+                access_code=access_code,
+            )
+        except Exception as rec_exc:
+            logger.warning("Failed to record chat query: %s", rec_exc)
+
         try:
             async for line in kb_service.query_kb_stream(
                 kb_name, body.message, session_id, tenant_id, user_id

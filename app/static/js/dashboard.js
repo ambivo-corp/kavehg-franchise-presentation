@@ -71,6 +71,8 @@
             '<td><span class="badge ' + (p.is_published ? 'badge-green' : 'badge-gray') + '">' +
               (p.is_published ? 'Published' : 'Draft') + '</span></td>' +
             '<td>' + (p.chat_enabled ? 'On' : 'Off') + '</td>' +
+            '<td>' + (p.num_views || 0) + '</td>' +
+            '<td>' + (p.total_chat_queries || 0) + ' <span style="color:#9ca3af;font-size:.8em">(' + (p.today_chat_queries || 0) + ')</span></td>' +
             '<td>' + new Date(p.created_at).toLocaleDateString() + '</td>' +
             '<td style="white-space:nowrap">' +
               '<a class="link" href="/dashboard/edit/' + p.id + '" style="margin-right:.5rem">Edit</a>' +
@@ -398,6 +400,15 @@
           document.getElementById("accessCodesSection").style.display = "";
         }
         renderAccessCodes(p.access_codes);
+
+        // Stats bar
+        var statsBar = document.getElementById("statsBar");
+        if (statsBar) {
+          document.getElementById("statViews").textContent = p.num_views || 0;
+          document.getElementById("statQueries").textContent = p.total_chat_queries || 0;
+          document.getElementById("statToday").textContent = p.today_chat_queries || 0;
+          statsBar.style.display = "";
+        }
 
         document.getElementById("editLoading").style.display = "none";
         document.getElementById("editContent").style.display = "";
