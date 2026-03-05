@@ -2,6 +2,7 @@
 Presentation CRUD + KB lifecycle
 """
 import logging
+import re
 import secrets
 import string
 from datetime import datetime, timezone
@@ -10,7 +11,7 @@ from bson import ObjectId
 from slugify import slugify
 
 from app.db import get_db
-from app.models.presentation import PresentationCreate, PresentationUpdate, PresentationResponse, PresentationDetail
+from app.models.presentation import PresentationCreate, PresentationUpdate, PresentationResponse, PresentationDetail, HeaderConfig
 from app.services import kb_service
 from app.config import settings
 
@@ -19,6 +20,21 @@ COLLECTION = "content_presentations"
 
 
 _CODE_CHARS = string.ascii_uppercase + string.digits  # A-Z, 0-9
+_CODE_RE = re.compile(r'^[A-Z0-9]{3,12}$')
+
+
+def _validate_access_codes(codes: list[str]) -> list[str]:
+    """Normalize to uppercase, deduplicate, and validate access codes."""
+    seen = set()
+    result = []
+    for code in codes:
+        code = code.strip().upper()
+        if not _CODE_RE.match(code):
+            raise ValueError(f"Invalid access code '{code}': must be 3-12 characters, A-Z and 0-9 only")
+        if code not in seen:
+            seen.add(code)
+            result.append(code)
+    return sorted(result)
 
 
 def _generate_access_codes(count: int = 3) -> list[str]:
@@ -31,6 +47,21 @@ def _generate_access_codes(count: int = 3) -> list[str]:
 
 def _kb_name(tenant_id: str, slug: str) -> str:
     return f"content_{tenant_id[:8]}_{slug}"
+
+
+def _build_header(doc: dict, base_url: str = "") -> HeaderConfig:
+    h = doc.get("header") or {}
+    has_logo = doc.get("has_header_logo", False)
+    logo_url = f"{base_url}/p/{doc['slug']}/logo" if has_logo else None
+    return HeaderConfig(
+        enabled=h.get("enabled", False),
+        logo_url=logo_url,
+        link_url=h.get("link_url"),
+        link_text=h.get("link_text"),
+        email=h.get("email"),
+        phone=h.get("phone"),
+        text=h.get("text"),
+    )
 
 
 def _doc_to_response(doc: dict, base_url: str = "", stats: dict | None = None) -> PresentationResponse:
@@ -46,6 +77,7 @@ def _doc_to_response(doc: dict, base_url: str = "", stats: dict | None = None) -
         chat_enabled=doc.get("chat_enabled", True),
         access_protected=doc.get("access_protected", False),
         access_codes=doc.get("access_codes", []),
+        header=_build_header(doc, base_url),
         description=doc.get("description"),
         tags=doc.get("tags", []),
         created_at=doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else str(doc["created_at"]),
@@ -69,6 +101,7 @@ def _doc_to_detail(doc: dict, base_url: str = "", stats: dict | None = None) -> 
         chat_enabled=doc.get("chat_enabled", True),
         access_protected=doc.get("access_protected", False),
         access_codes=doc.get("access_codes", []),
+        header=_build_header(doc, base_url),
         description=doc.get("description"),
         tags=doc.get("tags", []),
         created_at=doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else str(doc["created_at"]),
@@ -154,6 +187,7 @@ async def create(
         "access_codes": access_codes,
         "description": data.description,
         "tags": data.tags,
+        "header": data.header.model_dump(exclude_none=True) if data.header else {},
         "created_at": now,
         "updated_at": now,
     }
@@ -194,8 +228,13 @@ async def update(
             logger.exception(f"KB re-index failed for {doc['kb_name']}")
             raise
 
-    # Access protection
-    if data.access_protected is not None:
+    # Access protection — direct code management
+    if data.access_codes is not None:
+        updates["access_codes"] = _validate_access_codes(data.access_codes)
+        updates["access_protected"] = len(updates["access_codes"]) > 0
+
+    # Access protection toggle (only auto-generate when codes weren't explicitly provided)
+    if data.access_protected is not None and data.access_codes is None:
         updates["access_protected"] = data.access_protected
         if data.access_protected and not doc.get("access_codes"):
             updates["access_codes"] = _generate_access_codes(3)
@@ -205,6 +244,13 @@ async def update(
     if data.regenerate_codes is not None and data.regenerate_codes > 0:
         updates["access_codes"] = _generate_access_codes(data.regenerate_codes)
         updates["access_protected"] = True
+
+    # Header
+    if data.header is not None:
+        existing_header = doc.get("header") or {}
+        header_update = data.header.model_dump(exclude_none=True)
+        existing_header.update(header_update)
+        updates["header"] = existing_header
 
     if not updates:
         return _doc_to_response(doc, base_url)
@@ -247,7 +293,7 @@ async def toggle_publish(presentation_id: str, tenant_id: str, base_url: str = "
 
 async def get_by_id(presentation_id: str, tenant_id: str, base_url: str = "") -> PresentationDetail | None:
     coll = get_db()[COLLECTION]
-    doc = await coll.find_one({"_id": ObjectId(presentation_id), "tenant_id": tenant_id})
+    doc = await coll.find_one({"_id": ObjectId(presentation_id), "tenant_id": tenant_id}, {"header_logo": 0})
     if not doc:
         return None
     stats = await _chat_query_stats([presentation_id])
@@ -261,7 +307,70 @@ async def get_by_slug(slug: str) -> dict | None:
 
 async def list_by_tenant(tenant_id: str, base_url: str = "") -> list[PresentationResponse]:
     coll = get_db()[COLLECTION]
-    docs = await coll.find({"tenant_id": tenant_id}).sort("created_at", -1).to_list(500)
+    docs = await coll.find({"tenant_id": tenant_id}, {"header_logo": 0}).sort("created_at", -1).to_list(500)
     pids = [str(d["_id"]) for d in docs]
     stats = await _chat_query_stats(pids)
     return [_doc_to_response(d, base_url, stats.get(str(d["_id"]))) for d in docs]
+
+
+MAX_LOGO_SIZE = 1 * 1024 * 1024  # 1 MB
+ALLOWED_LOGO_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"}
+
+
+async def upload_logo(
+    presentation_id: str, tenant_id: str, file_data: bytes, content_type: str, base_url: str = ""
+) -> PresentationResponse:
+    if content_type not in ALLOWED_LOGO_TYPES:
+        raise ValueError(f"Unsupported image type: {content_type}")
+    if len(file_data) > MAX_LOGO_SIZE:
+        raise ValueError("Logo must be under 1 MB")
+
+    coll = get_db()[COLLECTION]
+    doc = await coll.find_one({"_id": ObjectId(presentation_id), "tenant_id": tenant_id})
+    if not doc:
+        raise ValueError("Presentation not found")
+
+    import base64
+    logo_b64 = base64.b64encode(file_data).decode("ascii")
+    now = datetime.now(timezone.utc)
+    await coll.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {
+            "header_logo": logo_b64,
+            "header_logo_content_type": content_type,
+            "has_header_logo": True,
+            "updated_at": now,
+        }},
+    )
+    doc["has_header_logo"] = True
+    doc["updated_at"] = now
+    return _doc_to_response(doc, base_url)
+
+
+async def delete_logo(presentation_id: str, tenant_id: str, base_url: str = "") -> PresentationResponse:
+    coll = get_db()[COLLECTION]
+    doc = await coll.find_one({"_id": ObjectId(presentation_id), "tenant_id": tenant_id})
+    if not doc:
+        raise ValueError("Presentation not found")
+
+    now = datetime.now(timezone.utc)
+    await coll.update_one(
+        {"_id": doc["_id"]},
+        {
+            "$unset": {"header_logo": "", "header_logo_content_type": ""},
+            "$set": {"has_header_logo": False, "updated_at": now},
+        },
+    )
+    doc["has_header_logo"] = False
+    doc["updated_at"] = now
+    return _doc_to_response(doc, base_url)
+
+
+async def get_logo(slug: str) -> tuple[bytes, str] | None:
+    """Return (binary_data, content_type) or None."""
+    coll = get_db()[COLLECTION]
+    doc = await coll.find_one({"slug": slug}, {"header_logo": 1, "header_logo_content_type": 1})
+    if not doc or not doc.get("header_logo"):
+        return None
+    import base64
+    return base64.b64decode(doc["header_logo"]), doc.get("header_logo_content_type", "image/png")

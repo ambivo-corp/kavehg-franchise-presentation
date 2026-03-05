@@ -10,6 +10,41 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
 </head>
 <body>
+  {% if header_enabled %}
+  <header class="page-header">
+    <div class="page-header-inner">
+      {% if header_logo_url %}
+      <div class="page-header-logo">
+        {% if header_link_url %}
+        <a href="{{ header_link_url }}" target="_blank" rel="noopener">
+          <img src="{{ header_logo_url }}" alt="{{ header_link_text or title }}">
+        </a>
+        {% else %}
+        <img src="{{ header_logo_url }}" alt="{{ title }}">
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if header_email or header_phone or header_text or header_link_url %}
+      <div class="page-header-info">
+        {% if header_link_url %}
+        <a href="{{ header_link_url }}" target="_blank" rel="noopener" class="page-header-link">{{ header_link_text or header_link_url }}</a>
+        {% endif %}
+        {% if header_email %}
+        <span class="page-header-detail"><a href="mailto:{{ header_email }}">{{ header_email }}</a></span>
+        {% endif %}
+        {% if header_phone %}
+        <span class="page-header-detail"><a href="tel:{{ header_phone }}">{{ header_phone }}</a></span>
+        {% endif %}
+        {% if header_text %}
+        <span class="page-header-detail">{{ header_text }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    <hr class="page-header-divider">
+  </header>
+  {% endif %}
+
   <article class="content">
     {{ html_content | safe }}
   </article>

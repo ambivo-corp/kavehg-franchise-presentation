@@ -58,6 +58,33 @@
           <p class="form-hint">Codes will be auto-generated after creation</p>
         </div>
 
+        <div class="toggle-row">
+          <label for="f_header">Page header</label>
+          <div class="toggle">
+            <input type="checkbox" id="f_header">
+            <span class="slider"></span>
+          </div>
+        </div>
+        <div id="headerSection" style="display:none">
+          <div class="header-fields">
+            <label>Logo (max 1 MB)</label>
+            <input type="file" id="f_logo" accept="image/*" style="margin-bottom:.75rem">
+            <div id="logoPreviewWrap" style="display:none;margin-bottom:.75rem">
+              <img id="logoPreview" style="max-height:64px;border-radius:4px">
+            </div>
+            <label for="f_link_url">Link URL</label>
+            <input type="text" id="f_link_url" placeholder="https://www.example.com">
+            <label for="f_link_text">Link display text (optional)</label>
+            <input type="text" id="f_link_text" placeholder="My Company">
+            <label for="f_header_email">Email (optional)</label>
+            <input type="text" id="f_header_email" placeholder="info@example.com">
+            <label for="f_header_phone">Phone (optional)</label>
+            <input type="text" id="f_header_phone" placeholder="+1-555-0100">
+            <label for="f_header_text">Additional text (optional)</label>
+            <input type="text" id="f_header_text" placeholder="Tagline or address">
+          </div>
+        </div>
+
         <label>Markdown Content</label>
         <div class="preview-toggle">
           <button type="button" id="btnWrite" class="active">Write</button>

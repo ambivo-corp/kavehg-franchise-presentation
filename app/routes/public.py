@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -64,6 +64,11 @@ async def serve_page(slug: str, request: Request):
 
     html_content = render_markdown(doc["markdown_content"])
 
+    # Build header context
+    header = doc.get("header") or {}
+    header_enabled = header.get("enabled", False)
+    has_logo = doc.get("has_header_logo", False)
+
     return templates.TemplateResponse(
         "page.html",
         {
@@ -74,8 +79,24 @@ async def serve_page(slug: str, request: Request):
             "presentation_id": str(doc["_id"]),
             "chat_enabled": "true" if doc.get("chat_enabled", True) else "false",
             "api_base": "",
+            "header_enabled": header_enabled,
+            "header_logo_url": f"/p/{slug}/logo" if has_logo else "",
+            "header_link_url": header.get("link_url") or "",
+            "header_link_text": header.get("link_text") or "",
+            "header_email": header.get("email") or "",
+            "header_phone": header.get("phone") or "",
+            "header_text": header.get("text") or "",
         },
     )
+
+
+@router.get("/p/{slug}/logo")
+async def serve_logo(slug: str):
+    result = await presentation_service.get_logo(slug)
+    if not result:
+        raise HTTPException(status_code=404, detail="No logo found")
+    data, content_type = result
+    return Response(content=data, media_type=content_type, headers={"Cache-Control": "public, max-age=3600"})
 
 
 @router.post("/p/{slug}/verify")

@@ -1,7 +1,7 @@
 """
 Authenticated CRUD routes for presentations
 """
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from typing import Dict, Any
 
 from app.auth.jwt_auth import get_current_user
@@ -61,7 +61,8 @@ async def update_presentation(
             presentation_id, user["tenant_id"], data, _base_url(request)
         )
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        status = 404 if "not found" in str(e).lower() else 400
+        raise HTTPException(status_code=status, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -85,6 +86,37 @@ async def toggle_publish(
 ):
     try:
         return await presentation_service.toggle_publish(
+            presentation_id, user["tenant_id"], _base_url(request)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{presentation_id}/logo", response_model=PresentationResponse)
+async def upload_logo(
+    presentation_id: str,
+    request: Request,
+    file: UploadFile = File(...),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        file_data = await file.read()
+        return await presentation_service.upload_logo(
+            presentation_id, user["tenant_id"], file_data, file.content_type or "image/png", _base_url(request)
+        )
+    except ValueError as e:
+        status = 404 if "not found" in str(e).lower() else 400
+        raise HTTPException(status_code=status, detail=str(e))
+
+
+@router.delete("/{presentation_id}/logo", response_model=PresentationResponse)
+async def delete_logo(
+    presentation_id: str,
+    request: Request,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        return await presentation_service.delete_logo(
             presentation_id, user["tenant_id"], _base_url(request)
         )
     except ValueError as e:

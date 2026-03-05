@@ -282,6 +282,17 @@ tr:last-child td { border-bottom: none; }
 .access-codes-display { margin-bottom: .5rem; }
 .access-codes-display label { display: block; font-size: .85rem; font-weight: 500; color: #374151; }
 
+/* ── Header fields ── */
+.header-fields {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+.header-fields label { margin-top: .5rem; }
+.header-fields label:first-child { margin-top: 0; }
+
 /* ── Stats bar ── */
 .stats-bar {
   display: flex;

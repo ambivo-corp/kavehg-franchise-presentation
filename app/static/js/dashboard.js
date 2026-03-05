@@ -265,13 +265,55 @@
   };
 
   // ══════════════════════════════════════════════════
-  // Access toggle helper
+  // Section toggle helper
   // ══════════════════════════════════════════════════
-  function initAccessToggle(checkboxEl, sectionEl) {
+  function initSectionToggle(checkboxEl, sectionEl) {
     if (!checkboxEl || !sectionEl) return;
     checkboxEl.addEventListener("change", function () {
       sectionEl.style.display = checkboxEl.checked ? "" : "none";
     });
+  }
+  // Keep old name for compatibility
+  function initAccessToggle(c, s) { initSectionToggle(c, s); }
+
+  // ══════════════════════════════════════════════════
+  // Logo file preview helper
+  // ══════════════════════════════════════════════════
+  function initLogoFilePreview(fileInputEl, previewWrapEl, previewImgEl) {
+    if (!fileInputEl || !previewWrapEl || !previewImgEl) return;
+    fileInputEl.addEventListener("change", function () {
+      var file = fileInputEl.files[0];
+      if (!file) return;
+      if (file.size > 1024 * 1024) { alert("Logo must be under 1 MB."); fileInputEl.value = ""; return; }
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        previewImgEl.src = e.target.result;
+        previewWrapEl.style.display = "";
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function getHeaderFields() {
+    return {
+      enabled: document.getElementById("f_header") ? document.getElementById("f_header").checked : false,
+      link_url: (document.getElementById("f_link_url") || {}).value || null,
+      link_text: (document.getElementById("f_link_text") || {}).value || null,
+      email: (document.getElementById("f_header_email") || {}).value || null,
+      phone: (document.getElementById("f_header_phone") || {}).value || null,
+      text: (document.getElementById("f_header_text") || {}).value || null,
+    };
+  }
+
+  function uploadLogo(presentationId, fileInput) {
+    if (!fileInput || !fileInput.files || !fileInput.files[0]) return Promise.resolve(null);
+    var formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+    return fetch(API + "/api/presentations/" + presentationId + "/logo", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + token },
+      body: formData,
+    }).then(handleAuth).then(function (r) { return r.json(); });
   }
 
   // ══════════════════════════════════════════════════
@@ -288,6 +330,8 @@
     );
     window.initPasteHandler(document.getElementById("f_md"));
     initAccessToggle(document.getElementById("f_access"), document.getElementById("accessCodesSection"));
+    initSectionToggle(document.getElementById("f_header"), document.getElementById("headerSection"));
+    initLogoFilePreview(document.getElementById("f_logo"), document.getElementById("logoPreviewWrap"), document.getElementById("logoPreview"));
 
     // Auto-generate slug from title
     var slugManuallyEdited = false;
@@ -317,12 +361,15 @@
         tags: tagsWidget.getTags(),
         chat_enabled: document.getElementById("f_chat").checked,
         access_protected: document.getElementById("f_access").checked,
+        header: getHeaderFields(),
       };
       if (body.access_protected) {
         body.num_access_codes = parseInt(document.getElementById("f_num_codes").value, 10) || 3;
       }
       var slug = document.getElementById("f_slug").value.trim();
       if (slug) body.slug = slug;
+
+      var logoInput = document.getElementById("f_logo");
 
       fetch(API + "/api/presentations", {
         method: "POST",
@@ -337,6 +384,12 @@
         .then(function (result) {
           if (result.access_protected && result.access_codes && result.access_codes.length) {
             alert("Access codes generated:\\n\\n" + result.access_codes.join("\\n") + "\\n\\nSave these codes — they are shown on the edit page too.");
+          }
+          // Upload logo if selected
+          if (logoInput && logoInput.files && logoInput.files[0]) {
+            return uploadLogo(result.id, logoInput).then(function () {
+              window.location.href = "/dashboard";
+            });
           }
           window.location.href = "/dashboard";
         })
@@ -364,18 +417,32 @@
     );
     window.initPasteHandler(document.getElementById("f_md"));
     initAccessToggle(document.getElementById("f_access"), document.getElementById("accessCodesSection"));
+    initSectionToggle(document.getElementById("f_header"), document.getElementById("headerSection"));
+    initLogoFilePreview(document.getElementById("f_logo"), document.getElementById("logoPreviewWrap"), document.getElementById("logoPreview"));
 
-    function renderAccessCodes(codes) {
-      var display = document.getElementById("accessCodesDisplay");
-      if (!display) return;
-      if (!codes || !codes.length) {
-        display.innerHTML = '<p style="color:#9ca3af;font-size:.85rem">No codes generated yet.</p>';
+    var pendingLogoDelete = false;
+
+    var accessCodes = [];
+    var CODE_RE = /^[A-Z0-9]{3,12}$/;
+
+    function renderAccessCodes() {
+      var list = document.getElementById("accessCodesList");
+      if (!list) return;
+      if (!accessCodes.length) {
+        list.innerHTML = '<p style="color:#9ca3af;font-size:.85rem">No codes yet. Add one or auto-generate.</p>';
         return;
       }
-      display.innerHTML = '<label style="margin-bottom:.3rem">Current access codes:</label>' +
-        '<div class="access-codes-list">' +
-        codes.map(function (c) { return '<span class="access-code-chip">' + esc(c) + '</span>'; }).join("") +
-        '</div>';
+      list.innerHTML = accessCodes.map(function (c, i) {
+        return '<span class="access-code-chip">' + esc(c) +
+          ' <span class="code-action" data-edit="' + i + '" title="Edit" style="cursor:pointer;margin-left:.3rem">&#9998;</span>' +
+          ' <span class="code-action" data-remove="' + i + '" title="Remove" style="cursor:pointer;color:#ef4444">&times;</span>' +
+          '</span>';
+      }).join("");
+    }
+
+    function setAccessCodes(codes) {
+      accessCodes = (codes || []).slice();
+      renderAccessCodes();
     }
 
     // Load existing data
@@ -399,7 +466,24 @@
         if (p.access_protected) {
           document.getElementById("accessCodesSection").style.display = "";
         }
-        renderAccessCodes(p.access_codes);
+        setAccessCodes(p.access_codes);
+
+        // Header
+        var h = p.header || {};
+        var headerCheckbox = document.getElementById("f_header");
+        if (headerCheckbox) {
+          headerCheckbox.checked = !!h.enabled;
+          if (h.enabled) document.getElementById("headerSection").style.display = "";
+        }
+        if (h.link_url) document.getElementById("f_link_url").value = h.link_url;
+        if (h.link_text) document.getElementById("f_link_text").value = h.link_text;
+        if (h.email) document.getElementById("f_header_email").value = h.email;
+        if (h.phone) document.getElementById("f_header_phone").value = h.phone;
+        if (h.text) document.getElementById("f_header_text").value = h.text;
+        if (h.logo_url) {
+          document.getElementById("logoPreview").src = h.logo_url;
+          document.getElementById("logoPreviewWrap").style.display = "";
+        }
 
         // Stats bar
         var statsBar = document.getElementById("statsBar");
@@ -417,7 +501,63 @@
         document.getElementById("editLoading").textContent = "Error: " + err.message;
       });
 
-    // Regenerate codes button
+    // Code list event delegation (edit / remove)
+    var codesList = document.getElementById("accessCodesList");
+    if (codesList) {
+      codesList.addEventListener("click", function (e) {
+        var editIdx = e.target.dataset.edit;
+        var removeIdx = e.target.dataset.remove;
+        if (editIdx !== undefined) {
+          var idx = parseInt(editIdx, 10);
+          var newVal = prompt("Edit access code:", accessCodes[idx]);
+          if (newVal === null) return;
+          newVal = newVal.trim().toUpperCase();
+          if (!CODE_RE.test(newVal)) { alert("Invalid code: 3-12 characters, A-Z and 0-9 only."); return; }
+          if (accessCodes.indexOf(newVal) !== -1 && accessCodes[idx] !== newVal) { alert("Duplicate code."); return; }
+          accessCodes[idx] = newVal;
+          renderAccessCodes();
+        }
+        if (removeIdx !== undefined) {
+          accessCodes.splice(parseInt(removeIdx, 10), 1);
+          renderAccessCodes();
+        }
+      });
+    }
+
+    // Add custom code
+    var btnAddCode = document.getElementById("btnAddCode");
+    var newCodeInput = document.getElementById("newCodeInput");
+    if (btnAddCode && newCodeInput) {
+      btnAddCode.addEventListener("click", function () {
+        var val = newCodeInput.value.trim().toUpperCase();
+        if (!val) return;
+        if (!CODE_RE.test(val)) { alert("Invalid code: 3-12 characters, A-Z and 0-9 only."); return; }
+        if (accessCodes.indexOf(val) !== -1) { alert("Code already exists."); return; }
+        accessCodes.push(val);
+        renderAccessCodes();
+        newCodeInput.value = "";
+      });
+      newCodeInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); btnAddCode.click(); }
+      });
+    }
+
+    // Auto-generate one code
+    var btnAutoGen = document.getElementById("btnAutoGen");
+    if (btnAutoGen) {
+      btnAutoGen.addEventListener("click", function () {
+        var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        var code;
+        do {
+          code = "";
+          for (var i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+        } while (accessCodes.indexOf(code) !== -1);
+        accessCodes.push(code);
+        renderAccessCodes();
+      });
+    }
+
+    // Regenerate all codes (immediate server call)
     var regenBtn = document.getElementById("btnRegenCodes");
     if (regenBtn) {
       regenBtn.addEventListener("click", function () {
@@ -433,14 +573,25 @@
           .then(handleAuth)
           .then(function (r) { return r.json(); })
           .then(function (p) {
-            renderAccessCodes(p.access_codes);
+            setAccessCodes(p.access_codes);
             regenBtn.disabled = false;
-            regenBtn.textContent = "Regenerate Codes";
+            regenBtn.textContent = "Regenerate All";
           })
           .catch(function () {
             regenBtn.disabled = false;
-            regenBtn.textContent = "Regenerate Codes";
+            regenBtn.textContent = "Regenerate All";
           });
+      });
+    }
+
+    // Remove logo button
+    var btnRemoveLogo = document.getElementById("btnRemoveLogo");
+    if (btnRemoveLogo) {
+      btnRemoveLogo.addEventListener("click", function () {
+        pendingLogoDelete = true;
+        document.getElementById("logoPreview").src = "";
+        document.getElementById("logoPreviewWrap").style.display = "none";
+        document.getElementById("f_logo").value = "";
       });
     }
 
@@ -452,14 +603,23 @@
       btn.disabled = true;
       btn.textContent = "Updating\u2026";
 
+      var isProtected = document.getElementById("f_access").checked;
       var body = {
         title: document.getElementById("f_title").value.trim(),
         markdown_content: document.getElementById("f_md").value,
         description: document.getElementById("f_desc").value.trim() || null,
         tags: tagsWidgetEdit.getTags(),
         chat_enabled: document.getElementById("f_chat").checked,
-        access_protected: document.getElementById("f_access").checked,
+        access_protected: isProtected,
+        header: getHeaderFields(),
       };
+      if (isProtected) {
+        body.access_codes = accessCodes;
+      } else {
+        body.access_codes = [];
+      }
+
+      var logoInput = document.getElementById("f_logo");
 
       fetch(API + "/api/presentations/" + editId, {
         method: "PUT",
@@ -470,6 +630,18 @@
         .then(function (r) {
           if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || "Update failed"); });
           return r.json();
+        })
+        .then(function () {
+          // Handle logo upload or delete
+          if (pendingLogoDelete) {
+            return fetch(API + "/api/presentations/" + editId + "/logo", {
+              method: "DELETE",
+              headers: authHeaders(),
+            }).then(handleAuth);
+          }
+          if (logoInput && logoInput.files && logoInput.files[0]) {
+            return uploadLogo(editId, logoInput);
+          }
         })
         .then(function () {
           window.location.href = "/dashboard";
