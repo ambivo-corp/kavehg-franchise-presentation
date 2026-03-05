@@ -70,7 +70,10 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
                 try:
                     evt = json.loads(raw)
                 except (json.JSONDecodeError, ValueError):
-                    # Non-JSON line, skip
+                    logger.debug(
+                        "Skipped non-JSON line: %.200s  kb=%s presentation=%s",
+                        raw, kb_name, presentation_id,
+                    )
                     continue
 
                 evt_type = evt.get("type", "")
@@ -84,7 +87,6 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
                     yield {"event": "start", "data": ""}
 
                 elif evt_type == "stream_complete":
-                    # Final answer with sources
                     yield {"event": "done", "data": ""}
                     return
 
@@ -94,10 +96,17 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
                     yield {"event": "error", "data": error_msg}
                     return
 
-                # Ignore keepalive, stream_status, etc.
+                else:
+                    logger.debug(
+                        "Unrecognized event type=%s  kb=%s presentation=%s",
+                        evt_type, kb_name, presentation_id,
+                    )
 
-        except Exception:
-            logger.exception(f"Chat stream error for kb={kb_name}")
+        except Exception as exc:
+            logger.exception(
+                "Chat stream error: %s(%s)  kb=%s tenant=%s presentation=%s",
+                type(exc).__name__, exc, kb_name, tenant_id, presentation_id,
+            )
             yield {"event": "error", "data": "An error occurred while generating the response."}
         yield {"event": "done", "data": ""}
 

@@ -98,21 +98,50 @@ async def query_kb_stream(
     user_id: str,
 ) -> AsyncIterator[str]:
     """Stream SSE chunks from vectordb /kh/get_answer."""
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=300.0)) as client:
-        async with client.stream(
-            "POST",
-            f"{BASE}/kh/get_answer",
-            headers=_headers(tenant_id, user_id),
-            json={
-                "kb_name": kb_name,
-                "question": question,
-                "session_id": session_id,
-                "streaming": True,
-                "tenant_id": tenant_id,
-                "userid": user_id,
-            },
-        ) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if line:
-                    yield line
+    url = f"{BASE}/kh/get_answer"
+    logger.info(
+        "query_kb_stream → POST %s  kb_name=%s tenant_id=%s session_id=%s",
+        url, kb_name, tenant_id, session_id,
+    )
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=300.0)) as client:
+            async with client.stream(
+                "POST",
+                url,
+                headers=_headers(tenant_id, user_id),
+                json={
+                    "kb_name": kb_name,
+                    "question": question,
+                    "session_id": session_id,
+                    "streaming": True,
+                    "tenant_id": tenant_id,
+                    "userid": user_id,
+                },
+            ) as resp:
+                logger.info(
+                    "query_kb_stream ← status=%s headers=%s",
+                    resp.status_code,
+                    dict(resp.headers),
+                )
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if line:
+                        logger.debug("SSE line: %s", line[:500])
+                        yield line
+    except httpx.HTTPStatusError as exc:
+        body = exc.response.text if exc.response else "<no body>"
+        logger.error(
+            "query_kb_stream HTTP error: status=%s body=%s kb_name=%s tenant_id=%s",
+            exc.response.status_code, body[:1000], kb_name, tenant_id,
+        )
+        raise
+    except httpx.TimeoutException:
+        logger.error(
+            "query_kb_stream timeout: kb_name=%s tenant_id=%s", kb_name, tenant_id,
+        )
+        raise
+    except Exception:
+        logger.exception(
+            "query_kb_stream unexpected error: kb_name=%s tenant_id=%s", kb_name, tenant_id,
+        )
+        raise
