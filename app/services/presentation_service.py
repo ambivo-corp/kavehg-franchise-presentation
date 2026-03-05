@@ -403,7 +403,7 @@ async def list_chat_queries(
             "access_code": q.get("access_code"),
             "session_id": q.get("session_id", ""),
             "date": q.get("date", ""),
-            "created_at": q["created_at"].isoformat() if isinstance(q.get("created_at"), datetime) else str(q.get("created_at", "")),
+            "created_at": (q["created_at"].isoformat() + "Z") if isinstance(q.get("created_at"), datetime) else str(q.get("created_at", "")),
         })
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
