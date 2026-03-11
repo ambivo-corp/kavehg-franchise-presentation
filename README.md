@@ -2,6 +2,17 @@
 
 Markdown content hosting microservice with per-page knowledge base chat. Submit Markdown via API, get a clean hosted web page with a floating AI chat widget that answers visitor questions about the content using streaming RAG.
 
+## Features
+
+- **Markdown hosting** — paste Markdown, get a styled public page at `/p/{slug}`
+- **AI chat widget** — floating chat bubble on every page, powered by VectorDB RAG streaming
+- **Access code protection** — optionally require an access code to view a page
+- **Header configuration** — customizable header with logo upload, contact info, and external links
+- **View tracking** — tracks `num_views`, `last_view_date`, and viewer IP per page
+- **Chat query management** — list, delete, and bulk-delete recorded chat queries per presentation
+- **GenAI quota enforcement** — checks quota via ambivo_api `/genai/check_quota` (fails open on connection error)
+- **Daily per-presentation chat limit** — configurable via `DAILY_CHAT_LIMIT` (default 20)
+
 ## Architecture
 
 ```
@@ -56,6 +67,9 @@ The app will be available at `http://localhost:8003`.
 | `MONGODB_DATABASE` | No | `omnilonely` | Database name |
 | `VECTORDB_API_URL` | No | `https://vectordbapi.ambivo.com` | VectorDB API base URL |
 | `AMBIVO_INTERNAL_SECRET` | No | `""` | Service-to-service auth for VectorDB |
+| `AMBIVO_API_URL` | No | `https://goferapi.ambivo.com` | Login proxy target (ambivo_api) |
+| `DAILY_CHAT_LIMIT` | No | `20` | Per-presentation daily chat limit |
+| `HOST` | No | `0.0.0.0` | Server bind address |
 | `PORT` | No | `8003` | Server port |
 | `DEBUG` | No | `false` | Enable debug mode |
 | `LOG_LEVEL` | No | `INFO` | Logging level |
@@ -139,6 +153,46 @@ DELETE /api/presentations/{id}
 
 Deletes the presentation and its associated knowledge base. Returns `204`.
 
+#### List Chat Queries
+
+```
+GET /api/presentations/{id}/queries?page=1&page_size=20
+```
+
+Returns paginated chat queries for the presentation.
+
+#### Delete Single Chat Query
+
+```
+DELETE /api/presentations/{id}/queries/{query_id}
+```
+
+Deletes a single chat query. Returns `204`.
+
+#### Delete All Chat Queries
+
+```
+DELETE /api/presentations/{id}/queries
+```
+
+Deletes all chat queries for the presentation. Returns `200` with deleted count.
+
+#### Upload Header Logo
+
+```
+POST /api/presentations/{id}/logo
+```
+
+Upload an image file as the presentation's header logo. Multipart form data.
+
+#### Remove Header Logo
+
+```
+DELETE /api/presentations/{id}/logo
+```
+
+Removes the header logo. Returns `200`.
+
 #### Toggle Published Status
 
 ```
@@ -155,7 +209,27 @@ Toggles `is_published` between `true` and `false`. Unpublished pages return 404 
 GET /p/{slug}
 ```
 
-Renders the Markdown as a styled HTML page with an embedded chat widget.
+Renders the Markdown as a styled HTML page with an embedded chat widget. Tracks view count and viewer IP.
+
+#### Verify Access Code
+
+```
+POST /p/{slug}/verify
+```
+
+```json
+{ "access_code": "secret123" }
+```
+
+Validates the access code for a protected page. Sets a session cookie on success.
+
+#### Serve Header Logo
+
+```
+GET /p/{slug}/logo
+```
+
+Returns the header logo image (cached 1 hour). Returns `404` if no logo is set.
 
 #### Chat with Page Content
 
@@ -172,7 +246,8 @@ POST /api/chat/{presentation_id}
 
 Returns a Server-Sent Events stream. Events:
 - `event: session` — session ID (persist this for conversation continuity)
-- `data: ...` — answer text chunks
+- `event: start` — stream started
+- `event: chunk` — answer text chunk
 - `event: done` — stream complete
 - `event: error` — error message
 
@@ -207,6 +282,7 @@ ambivo-content-portal/
 │   ├── services/
 │   │   ├── presentation_service.py  # CRUD + slug generation + KB lifecycle
 │   │   ├── kb_service.py            # VectorDB KB create/index/delete/stream
+│   │   ├── quota_service.py         # GenAI quota checks & daily chat limits
 │   │   └── md_renderer.py           # Markdown → HTML
 │   ├── models/
 │   │   └── presentation.py          # Pydantic request/response models
@@ -215,11 +291,13 @@ ambivo-content-portal/
 │   │   ├── dashboard.html           # Presentation list
 │   │   ├── create.html              # New presentation form (markdown paste + preview)
 │   │   ├── edit.html                # Edit presentation form (pre-populated)
+│   │   ├── access_code.html         # Access code verification page
 │   │   └── page.html                # Public rendered page for visitors
 │   └── static/
 │       ├── css/
 │       │   ├── dashboard.css        # Shared styles for dashboard, create, edit
 │       │   └── page.css             # GitHub-flavored Markdown styling
+│       ├── img/                     # Static images
 │       └── js/
 │           ├── dashboard.js         # Auth guard, list, create/edit, tags, preview
 │           └── chat-widget.js       # Floating chat bubble + SSE streaming
@@ -240,6 +318,7 @@ ambivo-content-portal/
 | Collection | Purpose |
 |------------|---------|
 | `content_presentations` | Stores all presentation documents (markdown, metadata, KB references) |
+| `content_chat_queries` | Recorded chat queries per presentation (TTL 90 days) |
 
 > The VectorDB knowledge bases are stored externally in the Ambivo VectorDB API, not in MongoDB. Each presentation gets a dedicated KB collection named `content_{tenant_id[:8]}_{slug}`.
 
@@ -258,17 +337,58 @@ ambivo-content-portal/
   "chat_enabled":     boolean       — whether chat widget is active
   "description":      string | null — optional summary
   "tags":             [string]      — categorization tags
+  "access_protected": boolean       — whether access code is required
+  "access_codes":     [string]      — list of valid access codes
+  "header": {                       — header configuration
+    "enabled":        boolean
+    "link_url":       string | null
+    "link_text":      string | null
+    "email":          string | null
+    "phone":          string | null
+    "text":           string | null
+  }
+  "header_logo":              binary | null  — uploaded logo image data
+  "header_logo_content_type": string | null  — MIME type of the logo
+  "has_header_logo":          boolean        — whether a logo is set
+  "num_views":                int            — total page view count
+  "last_view_date":           datetime | null — last view timestamp
+  "last_view_ip":             string | null  — IP of last viewer
+  "last_view_access_code":    string | null  — access code used by last viewer
   "created_at":       datetime      — UTC creation timestamp
   "updated_at":       datetime      — UTC last-modified timestamp
 }
 ```
 
-### Indexes
+### Indexes — `content_presentations`
 
 | Index | Type | Purpose |
 |-------|------|---------|
 | `slug` | Unique | Fast lookup for `/p/{slug}`, prevents duplicates |
 | `tenant_id` | Secondary | Filter presentations by tenant |
+
+### `content_chat_queries` Document Schema
+
+```
+{
+  "_id":              ObjectId
+  "presentation_id":  string        — associated presentation ID
+  "tenant_id":        string        — tenant that owns the presentation
+  "kb_name":          string        — VectorDB collection name
+  "session_id":       string        — chat session ID
+  "question":         string        — user's chat question
+  "client_ip":        string        — IP address of the chatter
+  "access_code":      string | null — access code used (if any)
+  "date":             string        — date string (YYYY-MM-DD)
+  "created_at":       datetime      — UTC timestamp
+}
+```
+
+### Indexes — `content_chat_queries`
+
+| Index | Type | Purpose |
+|-------|------|---------|
+| `(presentation_id, date)` | Compound | Filter queries by presentation and date |
+| `created_at` | TTL (90 days) | Auto-expire old chat queries |
 
 ## Data Flow
 
