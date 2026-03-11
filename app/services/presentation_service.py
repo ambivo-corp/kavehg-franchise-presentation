@@ -218,14 +218,25 @@ async def update(
     if data.markdown_content is not None and data.markdown_content != doc.get("markdown_content"):
         updates["markdown_content"] = data.markdown_content
         # Re-index KB
+        kb_name = doc["kb_name"]
+        kb_user_id = doc.get("userid", doc.get("user_id", ""))
         try:
-            await kb_service.truncate_kb(doc["kb_name"], tenant_id, doc.get("userid", doc.get("user_id", "")))
+            await kb_service.truncate_kb(kb_name, tenant_id, kb_user_id)
+        except Exception:
+            logger.warning(f"Truncate failed for {kb_name}, falling back to delete+create")
+            try:
+                await kb_service.delete_kb(kb_name, tenant_id, kb_user_id)
+                await kb_service.create_kb(kb_name, tenant_id, kb_user_id)
+            except Exception:
+                logger.exception(f"Fallback delete+create failed for {kb_name}")
+                raise
+        try:
             await kb_service.index_text(
-                doc["kb_name"], data.markdown_content, tenant_id, doc.get("userid", doc.get("user_id", "")),
+                kb_name, data.markdown_content, tenant_id, kb_user_id,
                 display_file_name=data.title or doc["title"],
             )
         except Exception:
-            logger.exception(f"KB re-index failed for {doc['kb_name']}")
+            logger.exception(f"KB index_text failed for {kb_name}")
             raise
 
     # Access protection — direct code management

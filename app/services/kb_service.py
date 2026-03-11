@@ -84,6 +84,11 @@ async def truncate_kb(kb_name: str, tenant_id: str, user_id: str) -> dict:
             headers=_headers(tenant_id, user_id),
             params={"kb_name": kb_name, "action": "truncate"},
         )
+        if resp.status_code >= 400:
+            logger.error(
+                "truncate_kb failed: status=%s body=%s kb_name=%s tenant_id=%s",
+                resp.status_code, resp.text[:1000], kb_name, tenant_id,
+            )
         resp.raise_for_status()
         data = resp.json()
         logger.info(f"Truncated KB: {kb_name}")
