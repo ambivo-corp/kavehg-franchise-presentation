@@ -33,7 +33,7 @@ class PresentationCreate(BaseModel):
     slug: str | None = None
     description: str | None = None
     tags: list[str] = []
-    chat_enabled: bool = True
+    chat_enabled: bool = False
     access_protected: bool = False
     num_access_codes: int = 3
     header: HeaderUpdate | None = None

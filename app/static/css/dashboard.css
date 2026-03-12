@@ -430,11 +430,12 @@ tr:last-child td { border-bottom: none; }
 .btn-ai {
   display: inline-flex;
   align-items: center;
-  gap: .4rem;
-  padding: .45rem 1rem;
-  border-radius: 6px;
-  font-size: .85rem;
-  font-weight: 600;
+  gap: .25rem;
+  padding: .28rem .6rem;
+  border-radius: 5px;
+  font-size: .78rem;
+  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
   border: 1px solid #7c3aed;
   background: linear-gradient(135deg, #7c3aed, #4f46e5);
