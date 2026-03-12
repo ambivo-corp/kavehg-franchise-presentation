@@ -63,9 +63,9 @@ body {
   display: block;
   width: 100%;
   max-width: 960px;
-  margin: 2rem auto;
+  margin: 1rem auto 0;
   border: none;
-  min-height: 400px;
+  min-height: 200px;
   overflow: hidden;
 }
 
@@ -148,9 +148,9 @@ body {
 /* ── Powered by footer ── */
 .powered-by {
   text-align: center;
-  padding: 2rem 1rem 2.5rem;
+  padding: 1.5rem 1rem 2rem;
   border-top: 1px solid #e5e7eb;
-  margin-top: 3rem;
+  margin-top: 1rem;
 }
 .powered-by a {
   display: inline-flex;
