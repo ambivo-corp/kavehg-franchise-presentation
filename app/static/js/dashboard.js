@@ -181,7 +181,7 @@
   // Content type toggle helper
   // ══════════════════════════════════════════════════
   window.initContentTypeToggle = function (btnMd, btnHtml, mdEditorEl, htmlEditorEl, hiddenInput, hintEl) {
-    if (!btnMd || !btnHtml || !mdEditorEl || !htmlEditorEl || !hiddenInput || !hintEl) {
+    if (!btnMd || !btnHtml || !mdEditorEl || !htmlEditorEl || !hiddenInput) {
       return { activate: function () {} };
     }
     function activate(type) {
@@ -189,11 +189,9 @@
       if (type === "html") {
         btnHtml.classList.add("active"); btnMd.classList.remove("active");
         mdEditorEl.style.display = "none"; htmlEditorEl.style.display = "";
-        hintEl.textContent = "Paste or write a full HTML page with styles and layout. Clean text is extracted automatically for AI chat indexing.";
       } else {
         btnMd.classList.add("active"); btnHtml.classList.remove("active");
         mdEditorEl.style.display = ""; htmlEditorEl.style.display = "none";
-        hintEl.textContent = "Write or paste Markdown content. HTML pasted from other sources is auto-converted.";
       }
     }
     btnMd.addEventListener("click", function () { activate("markdown"); });
@@ -966,9 +964,6 @@
       if (btnTypeH) { btnTypeH.classList.add("active"); btnTypeMd.classList.remove("active"); }
       if (mdEditor) mdEditor.style.display = "none";
       if (htmlEditorEl) htmlEditorEl.style.display = "";
-      var hintEl = document.getElementById("contentTypeHint");
-      if (hintEl) hintEl.textContent = "Paste or write a full HTML page with styles and layout. Clean text is extracted automatically for AI chat indexing.";
-
       // Close modal
       aiModal.style.display = "none";
     }
@@ -1004,7 +999,8 @@
     // Close
     btnAiClose.addEventListener("click", function () { aiModal.style.display = "none"; });
     aiModal.addEventListener("click", function (e) {
-      if (e.target === aiModal) aiModal.style.display = "none";
+      // Only allow closing by clicking outside if no active session
+      if (e.target === aiModal && !aiSessionId) aiModal.style.display = "none";
     });
 
     // Start interview

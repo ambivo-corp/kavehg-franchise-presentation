@@ -108,7 +108,6 @@
           </div>
           <button type="button" class="btn-ai" id="btnAiGenerate">&#9733; AI Generate</button>
         </div>
-        <p class="form-hint" style="margin-top:0" id="contentTypeHint">Write or paste Markdown content. HTML pasted from other sources is auto-converted.</p>
 
         <div id="markdownEditor">
           <div class="preview-toggle">
@@ -141,7 +140,7 @@
         <h3>&#9733; AI Page Generator</h3>
         <button class="modal-close" id="btnAiClose">&times;</button>
       </div>
-      <div class="modal-body" id="aiBody" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+      <div class="modal-body" id="aiBody" style="flex:1;display:flex;flex-direction:column;overflow-y:auto">
         <!-- Step 1: Prompt -->
         <div id="aiStepPrompt">
           <p style="color:#6b7280;font-size:.88rem;margin-bottom:.75rem">Describe the page you want. Include details about the purpose, branding, visual style, and content sections.</p>
@@ -153,7 +152,7 @@
           <p class="form-hint" style="margin-top:.5rem">"Start Design Interview" asks a few clarifying questions first. "Generate Directly" skips ahead (best for detailed prompts).</p>
         </div>
         <!-- Step 2: Interview -->
-        <div id="aiStepInterview" style="display:none;flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div id="aiStepInterview" style="display:none;flex:1;flex-direction:column">
           <div class="ai-chat-log" id="aiChatLog"></div>
           <div style="padding:.5rem .75rem;border-top:1px solid #e5e7eb">
             <div id="aiQuestionsForm"></div>
