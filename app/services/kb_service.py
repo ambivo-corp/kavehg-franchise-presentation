@@ -66,23 +66,11 @@ async def index_text(
 
 async def delete_kb(kb_name: str, tenant_id: str, user_id: str) -> dict:
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        # Try /kh/collection first (matches create endpoint)
         resp = await client.delete(
-            f"{BASE}/kh/collection",
+            f"{BASE}/pgv/collection",
             headers=_headers(tenant_id, user_id),
-            params={"kb_name": kb_name, "action": "delete"},
+            params={"kb_name": kb_name},
         )
-        if resp.status_code >= 400:
-            logger.warning(
-                "delete_kb via /kh/collection failed (status=%s), trying /pgv/collection fallback for kb=%s",
-                resp.status_code, kb_name,
-            )
-            # Fallback to /pgv/collection
-            resp = await client.delete(
-                f"{BASE}/pgv/collection",
-                headers=_headers(tenant_id, user_id),
-                params={"kb_name": kb_name, "action": "delete"},
-            )
         resp.raise_for_status()
         data = resp.json()
         logger.info(f"Deleted KB: {kb_name}")
