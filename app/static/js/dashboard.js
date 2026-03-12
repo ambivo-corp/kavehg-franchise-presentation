@@ -1081,12 +1081,8 @@
       aiPromptEl.focus();
     });
 
-    // Close
+    // Close only via X button — clicking outside does not dismiss
     btnAiClose.addEventListener("click", function () { aiModal.style.display = "none"; });
-    aiModal.addEventListener("click", function (e) {
-      // Only allow closing by clicking outside if no active session
-      if (e.target === aiModal && !aiSessionId) aiModal.style.display = "none";
-    });
 
     // Start interview
     btnAiStart.addEventListener("click", function () {
