@@ -200,6 +200,32 @@
   };
 
   // ══════════════════════════════════════════════════
+  // HTML editor Code/Preview toggle
+  // ══════════════════════════════════════════════════
+  window.initHtmlPreview = function () {
+    var btnWrite = document.getElementById("btnHtmlWrite");
+    var btnPreview = document.getElementById("btnHtmlPreview");
+    var textarea = document.getElementById("f_html");
+    var frame = document.getElementById("htmlPreviewFrame");
+    if (!btnWrite || !btnPreview || !textarea || !frame) return;
+
+    btnWrite.addEventListener("click", function () {
+      btnWrite.classList.add("active");
+      btnPreview.classList.remove("active");
+      textarea.style.display = "";
+      frame.style.display = "none";
+    });
+
+    btnPreview.addEventListener("click", function () {
+      btnPreview.classList.add("active");
+      btnWrite.classList.remove("active");
+      textarea.style.display = "none";
+      frame.style.display = "block";
+      frame.srcdoc = textarea.value || "<p style='color:#9ca3af;padding:2rem'>No HTML content to preview.</p>";
+    });
+  };
+
+  // ══════════════════════════════════════════════════
   // Shared HTML detection + conversion helper
   // ══════════════════════════════════════════════════
   var HTML_RE = /^\s*<!DOCTYPE|^\s*<html|^\s*<head|^\s*<body|<\/(div|p|table|h[1-6]|ul|ol|section|article|body|html)>/i;
@@ -487,6 +513,7 @@
       document.getElementById("f_content_type"),
       document.getElementById("contentTypeHint")
     );
+    window.initHtmlPreview();
     initAccessToggle(document.getElementById("f_access"), document.getElementById("accessCodesSection"));
     initSectionToggle(document.getElementById("f_header"), document.getElementById("headerSection"));
     initLogoFilePreview(document.getElementById("f_logo"), document.getElementById("logoPreviewWrap"), document.getElementById("logoPreview"));
@@ -603,6 +630,7 @@
       document.getElementById("f_content_type"),
       document.getElementById("contentTypeHint")
     );
+    window.initHtmlPreview();
     initAccessToggle(document.getElementById("f_access"), document.getElementById("accessCodesSection"));
     initSectionToggle(document.getElementById("f_header"), document.getElementById("headerSection"));
     initLogoFilePreview(document.getElementById("f_logo"), document.getElementById("logoPreviewWrap"), document.getElementById("logoPreview"));
@@ -903,6 +931,13 @@
     var aiStepPrompt = document.getElementById("aiStepPrompt");
     var aiStepInterview = document.getElementById("aiStepInterview");
     var aiStepLoading = document.getElementById("aiStepLoading");
+    var aiStepPreview = document.getElementById("aiStepPreview");
+    var aiPreviewFrame = document.getElementById("aiPreviewFrame");
+    var aiPreviewCode = document.getElementById("aiPreviewCode");
+    var btnAiPreviewTab = document.getElementById("btnAiPreviewTab");
+    var btnAiCodeTab = document.getElementById("btnAiCodeTab");
+    var btnAiUseHtml = document.getElementById("btnAiUseHtml");
+    var btnAiDiscard = document.getElementById("btnAiDiscard");
     var aiChatLog = document.getElementById("aiChatLog");
     var aiQuestionsForm = document.getElementById("aiQuestionsForm");
     var btnAiStart = document.getElementById("btnAiStart");
@@ -917,6 +952,7 @@
       aiStepPrompt.style.display = step === "prompt" ? "" : "none";
       aiStepInterview.style.display = step === "interview" ? "" : "none";
       aiStepLoading.style.display = step === "loading" ? "" : "none";
+      aiStepPreview.style.display = step === "preview" ? "flex" : "none";
       aiFooterError.style.display = "none";
     }
 
@@ -949,7 +985,43 @@
       if (first) first.focus();
     }
 
-    function aiInsertHtml(html) {
+    var aiPendingHtml = "";
+
+    function aiShowPreview(html) {
+      aiPendingHtml = html;
+      aiShowStep("preview");
+
+      // Show live preview in iframe
+      aiPreviewCode.value = html;
+      aiPreviewFrame.srcdoc = html;
+      aiPreviewFrame.style.display = "block";
+      aiPreviewCode.style.display = "none";
+      btnAiPreviewTab.className = "btn-sm btn-primary";
+      btnAiCodeTab.className = "btn-sm btn-ghost";
+    }
+
+    // Preview / Code tab toggle
+    btnAiPreviewTab.addEventListener("click", function () {
+      // Sync any code edits back to preview
+      aiPendingHtml = aiPreviewCode.value;
+      aiPreviewFrame.srcdoc = aiPendingHtml;
+      aiPreviewFrame.style.display = "block";
+      aiPreviewCode.style.display = "none";
+      btnAiPreviewTab.className = "btn-sm btn-primary";
+      btnAiCodeTab.className = "btn-sm btn-ghost";
+    });
+
+    btnAiCodeTab.addEventListener("click", function () {
+      aiPreviewFrame.style.display = "none";
+      aiPreviewCode.style.display = "block";
+      btnAiCodeTab.className = "btn-sm btn-primary";
+      btnAiPreviewTab.className = "btn-sm btn-ghost";
+    });
+
+    // Use the HTML
+    btnAiUseHtml.addEventListener("click", function () {
+      var html = aiPreviewCode.value || aiPendingHtml;
+
       // Switch to HTML mode and insert
       var ctToggle = document.getElementById("f_content_type");
       var htmlTextarea = document.getElementById("f_html");
@@ -964,8 +1036,21 @@
       if (btnTypeH) { btnTypeH.classList.add("active"); btnTypeMd.classList.remove("active"); }
       if (mdEditor) mdEditor.style.display = "none";
       if (htmlEditorEl) htmlEditorEl.style.display = "";
+
       // Close modal
       aiModal.style.display = "none";
+    });
+
+    // Discard — go back to prompt
+    btnAiDiscard.addEventListener("click", function () {
+      aiPendingHtml = "";
+      aiSessionId = null;
+      aiShowStep("prompt");
+    });
+
+    // Legacy name kept for all callers
+    function aiInsertHtml(html) {
+      aiShowPreview(html);
     }
 
     function aiCollectAnswers() {
