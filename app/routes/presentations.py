@@ -1,12 +1,17 @@
 """
 Authenticated CRUD routes for presentations
 """
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+import logging
+
+from bson.errors import InvalidId
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from typing import Dict, Any
 
 from app.auth.jwt_auth import get_current_user
 from app.models.presentation import PresentationCreate, PresentationUpdate, PresentationResponse, PresentationDetail
 from app.services import presentation_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/presentations", tags=["presentations"])
 
@@ -25,8 +30,11 @@ async def create_presentation(
         return await presentation_service.create(
             user["tenant_id"], user["userid"], data, _base_url(request)
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Failed to create presentation")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("", response_model=list[PresentationResponse])
@@ -43,7 +51,10 @@ async def get_presentation(
     request: Request,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
-    result = await presentation_service.get_by_id(presentation_id, user["tenant_id"], _base_url(request))
+    try:
+        result = await presentation_service.get_by_id(presentation_id, user["tenant_id"], _base_url(request))
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid presentation ID format")
     if not result:
         raise HTTPException(status_code=404, detail="Presentation not found")
     return result
@@ -60,11 +71,14 @@ async def update_presentation(
         return await presentation_service.update(
             presentation_id, user["tenant_id"], data, _base_url(request)
         )
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid presentation ID format")
     except ValueError as e:
         status = 404 if "not found" in str(e).lower() else 400
         raise HTTPException(status_code=status, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Failed to update presentation %s", presentation_id)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{presentation_id}", status_code=204)
@@ -74,6 +88,8 @@ async def delete_presentation(
 ):
     try:
         await presentation_service.delete(presentation_id, user["tenant_id"])
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid presentation ID format")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -88,6 +104,8 @@ async def toggle_publish(
         return await presentation_service.toggle_publish(
             presentation_id, user["tenant_id"], _base_url(request)
         )
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid presentation ID format")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -96,13 +114,15 @@ async def toggle_publish(
 async def list_chat_queries(
     presentation_id: str,
     user: Dict[str, Any] = Depends(get_current_user),
-    page: int = 1,
-    page_size: int = 25,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
 ):
     try:
         return await presentation_service.list_chat_queries(
             presentation_id, user["tenant_id"], page, page_size
         )
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -115,6 +135,8 @@ async def delete_chat_query(
 ):
     try:
         await presentation_service.delete_chat_query(query_id, presentation_id, user["tenant_id"])
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -126,6 +148,8 @@ async def delete_all_chat_queries(
 ):
     try:
         await presentation_service.delete_all_chat_queries(presentation_id, user["tenant_id"])
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -142,6 +166,8 @@ async def upload_logo(
         return await presentation_service.upload_logo(
             presentation_id, user["tenant_id"], file_data, file.content_type or "image/png", _base_url(request)
         )
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid presentation ID format")
     except ValueError as e:
         status = 404 if "not found" in str(e).lower() else 400
         raise HTTPException(status_code=status, detail=str(e))
@@ -157,5 +183,7 @@ async def delete_logo(
         return await presentation_service.delete_logo(
             presentation_id, user["tenant_id"], _base_url(request)
         )
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid presentation ID format")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

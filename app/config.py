@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     # Chat limits
     daily_chat_limit: int = 20
 
+    # AI page generation (Anthropic)
+    anthropic_api_key: str = ""
+    ai_model: str = "claude-sonnet-4-20250514"
+
     # Logging
     log_level: str = "INFO"
 

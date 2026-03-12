@@ -100,19 +100,76 @@
           </div>
         </div>
 
-        <label>Markdown Content</label>
-        <div class="preview-toggle">
-          <button type="button" id="btnWrite" class="active">Write</button>
-          <button type="button" id="btnPreview">Preview</button>
+        <label>Content Type</label>
+        <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.25rem">
+          <div class="content-type-toggle">
+            <button type="button" id="btnTypeMarkdown" class="active">Markdown</button>
+            <button type="button" id="btnTypeHtml">HTML</button>
+          </div>
+          <button type="button" class="btn-ai" id="btnAiGenerate">&#9733; AI Generate</button>
         </div>
-        <textarea id="f_md" class="md-editor" required placeholder="# Your Markdown here..."></textarea>
-        <div class="md-preview" id="mdPreview"></div>
+        <p class="form-hint" id="contentTypeHint">Write or paste Markdown content. HTML pasted from other sources is auto-converted.</p>
+
+        <div id="markdownEditor">
+          <div class="preview-toggle">
+            <button type="button" id="btnWrite" class="active">Write</button>
+            <button type="button" id="btnPreview">Preview</button>
+          </div>
+          <textarea id="f_md" class="md-editor" placeholder="# Your Markdown here..."></textarea>
+          <div class="md-preview" id="mdPreview"></div>
+        </div>
+
+        <div id="htmlEditor" style="display:none">
+          <textarea id="f_html" class="md-editor" placeholder="<!DOCTYPE html>&#10;<html>&#10;<head>...</head>&#10;<body>&#10;  Your HTML here...&#10;</body>&#10;</html>"></textarea>
+          <p class="form-hint">Paste or write a full HTML page. It will render exactly as-is, including styles and layout. Only clean text is indexed for AI chat.</p>
+        </div>
+
+        <input type="hidden" id="f_content_type" value="markdown">
 
         <div class="form-actions">
           <a class="btn-sm btn-ghost" href="/dashboard">Cancel</a>
           <button type="submit" class="btn-sm btn-primary" id="submitBtn">Create Presentation</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- AI Generate Modal -->
+  <div id="aiModal" class="modal-overlay" style="display:none">
+    <div class="modal-panel" style="max-height:85vh">
+      <div class="modal-header">
+        <h3>&#9733; AI Page Generator</h3>
+        <button class="modal-close" id="btnAiClose">&times;</button>
+      </div>
+      <div class="modal-body" id="aiBody" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <!-- Step 1: Prompt -->
+        <div id="aiStepPrompt">
+          <p style="color:#6b7280;font-size:.88rem;margin-bottom:.75rem">Describe the page you want. Include details about the purpose, branding, visual style, and content sections.</p>
+          <textarea id="aiPrompt" class="md-editor" style="min-height:120px" placeholder="e.g. Create a modern landing page for my Italian restaurant in downtown Seattle. We serve fresh pasta and wood-fired pizza. Use warm tones with a hero section, menu highlights, testimonials, and a reservation form."></textarea>
+          <div style="display:flex;gap:.5rem;margin-top:.75rem">
+            <button class="btn-sm btn-primary" id="btnAiStart">Start Design Interview</button>
+            <button class="btn-sm btn-ghost" id="btnAiDirect">Generate Directly</button>
+          </div>
+          <p class="form-hint" style="margin-top:.5rem">"Start Design Interview" asks a few clarifying questions first. "Generate Directly" skips ahead (best for detailed prompts).</p>
+        </div>
+        <!-- Step 2: Interview -->
+        <div id="aiStepInterview" style="display:none;flex:1;display:flex;flex-direction:column;overflow:hidden">
+          <div class="ai-chat-log" id="aiChatLog"></div>
+          <div style="padding:.5rem .75rem;border-top:1px solid #e5e7eb">
+            <div id="aiQuestionsForm"></div>
+            <div style="display:flex;gap:.5rem;margin-top:.5rem">
+              <button class="btn-sm btn-primary" id="btnAiAnswer" disabled>Send Answers</button>
+              <span id="aiStatus" style="font-size:.82rem;color:#6b7280;align-self:center"></span>
+            </div>
+          </div>
+        </div>
+        <!-- Step 3: Loading -->
+        <div id="aiStepLoading" style="display:none;text-align:center;padding:3rem 0">
+          <div class="ai-spinner" style="width:32px;height:32px;margin:0 auto 1rem"></div>
+          <p style="color:#6b7280">Generating your HTML page&hellip; This may take 15-30 seconds.</p>
+        </div>
+      </div>
+      <div class="modal-footer" id="aiFooterError" style="display:none;color:#b91c1c;font-size:.85rem;padding:.5rem 1rem"></div>
     </div>
   </div>
 

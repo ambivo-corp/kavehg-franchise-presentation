@@ -45,9 +45,19 @@
   </header>
   {% endif %}
 
+  {% if content_type == "html" %}
+  {% set resize_script = '<script>var _cpT;function _cpR(){clearTimeout(_cpT);_cpT=setTimeout(function(){window.parent.postMessage({cpFrameHeight:document.documentElement.scrollHeight},"*")},50)}window.addEventListener("load",_cpR);window.addEventListener("resize",_cpR);new MutationObserver(_cpR).observe(document.body||document.documentElement,{childList:!0,subtree:!0,attributes:!0})</script>' %}
+  {% if '</body>' in html_content %}
+  {% set framed_html = html_content.replace('</body>', resize_script + '</body>') %}
+  {% else %}
+  {% set framed_html = html_content + resize_script %}
+  {% endif %}
+  <iframe id="htmlFrame" class="html-frame" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" srcdoc="{{ framed_html | e }}"></iframe>
+  {% else %}
   <article class="content">
     {{ html_content | safe }}
   </article>
+  {% endif %}
 
   <footer class="powered-by">
     <a href="https://www.ambivo.com" target="_blank" rel="noopener">
@@ -56,6 +66,22 @@
     </a>
   </footer>
 
+  {% if content_type == "html" %}
+  <script>
+  // Listen for height messages from sandboxed iframe (resize script injected server-side)
+  (function() {
+    var frame = document.getElementById("htmlFrame");
+    window.addEventListener("message", function(e) {
+      // Only accept messages from the sandboxed iframe (opaque "null" origin)
+      if (e.source !== frame.contentWindow) return;
+      if (e.data && typeof e.data.cpFrameHeight === "number") {
+        var h = Math.min(Math.max(e.data.cpFrameHeight, 100), 50000);
+        frame.style.height = h + "px";
+      }
+    });
+  })();
+  </script>
+  {% else %}
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script>hljs.highlightAll();</script>
   <script>
@@ -66,6 +92,7 @@
     if (img.complete && img.naturalWidth === 0 && img.src) { img.classList.add("broken"); }
   });
   </script>
+  {% endif %}
 
   <script
     src="/static/js/chat-widget.js"

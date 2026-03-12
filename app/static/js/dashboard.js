@@ -6,7 +6,8 @@
 
   // ── Auth guard ──
   var token = localStorage.getItem("cp_token");
-  var user = JSON.parse(localStorage.getItem("cp_user") || "null");
+  var user;
+  try { user = JSON.parse(localStorage.getItem("cp_user") || "null"); } catch (e) { user = null; }
   if (!token || !user) { window.location.href = "/login"; return; }
 
   // Populate nav user name
@@ -26,7 +27,16 @@
   }
 
   function esc(s) {
-    var d = document.createElement("div"); d.textContent = s || ""; return d.innerHTML;
+    var d = document.createElement("div"); d.textContent = s || "";
+    return d.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  // Safely extract error detail from a non-OK response (handles non-JSON bodies)
+  function parseErrorResponse(r, fallback) {
+    return r.text().then(function (t) {
+      try { var d = JSON.parse(t); return d.detail || fallback; }
+      catch (e) { return fallback + " (HTTP " + r.status + ")"; }
+    });
   }
 
   // ── Logout ──
@@ -54,7 +64,7 @@
 
     fetch(API + "/api/presentations", { headers: authHeaders() })
       .then(handleAuth)
-      .then(function (r) { return r.json(); })
+      .then(function (r) { if (!r.ok) throw new Error("Failed to load presentations"); return r.json(); })
       .then(function (list) {
         loadingEl.style.display = "none";
         if (!list.length) { emptyEl.style.display = ""; return; }
@@ -65,15 +75,18 @@
           var protectedBadge = p.access_protected
             ? ' <span class="badge badge-amber">Protected</span>'
             : '';
+          var typeBadge = p.content_type === "html"
+            ? ' <span class="badge badge-blue">HTML</span>'
+            : '';
           tr.innerHTML =
-            '<td>' + esc(p.title) + protectedBadge + '</td>' +
+            '<td>' + esc(p.title) + protectedBadge + typeBadge + '</td>' +
             '<td><a class="link" href="/p/' + esc(p.slug) + '" target="_blank">/p/' + esc(p.slug) + '</a></td>' +
             '<td><span class="badge ' + (p.is_published ? 'badge-green' : 'badge-gray') + '">' +
               (p.is_published ? 'Published' : 'Draft') + '</span></td>' +
             '<td>' + (p.chat_enabled ? 'On' : 'Off') + '</td>' +
             '<td>' + (p.num_views || 0) + '</td>' +
             '<td><span class="link" style="cursor:pointer" data-queries="' + p.id + '">' + (p.total_chat_queries || 0) + '</span> <span style="color:#9ca3af;font-size:.8em">(' + (p.today_chat_queries || 0) + ')</span></td>' +
-            '<td>' + new Date(p.created_at).toLocaleDateString() + '</td>' +
+            '<td>' + (p.created_at ? new Date(p.created_at).toLocaleDateString() : "-") + '</td>' +
             '<td style="white-space:nowrap">' +
               '<a class="link" href="/dashboard/edit/' + p.id + '" style="margin-right:.5rem">Edit</a>' +
               '<button class="btn-danger-sm" data-toggle="' + p.id + '">Toggle</button> ' +
@@ -100,14 +113,16 @@
   function togglePublish(id) {
     fetch(API + "/api/presentations/" + id + "/publish", { method: "PATCH", headers: authHeaders() })
       .then(handleAuth)
-      .then(function () { loadList(); });
+      .then(function (r) { if (!r.ok) throw new Error("Failed to toggle publish status"); loadList(); })
+      .catch(function (err) { alert(err.message); });
   }
 
   function del(id) {
     if (!confirm("Delete this presentation? The knowledge base will also be removed.")) return;
     fetch(API + "/api/presentations/" + id, { method: "DELETE", headers: authHeaders() })
       .then(handleAuth)
-      .then(function () { loadList(); });
+      .then(function (r) { if (!r.ok) throw new Error("Failed to delete presentation"); loadList(); })
+      .catch(function (err) { alert(err.message); });
   }
 
   // ══════════════════════════════════════════════════
@@ -160,6 +175,30 @@
       getTags: function () { return tags.slice(); },
       setTags: function (arr) { tags = (arr || []).slice(); render(); }
     };
+  };
+
+  // ══════════════════════════════════════════════════
+  // Content type toggle helper
+  // ══════════════════════════════════════════════════
+  window.initContentTypeToggle = function (btnMd, btnHtml, mdEditorEl, htmlEditorEl, hiddenInput, hintEl) {
+    if (!btnMd || !btnHtml || !mdEditorEl || !htmlEditorEl || !hiddenInput || !hintEl) {
+      return { activate: function () {} };
+    }
+    function activate(type) {
+      hiddenInput.value = type;
+      if (type === "html") {
+        btnHtml.classList.add("active"); btnMd.classList.remove("active");
+        mdEditorEl.style.display = "none"; htmlEditorEl.style.display = "";
+        hintEl.textContent = "Paste or write a full HTML page with styles and layout. Clean text is extracted automatically for AI chat indexing.";
+      } else {
+        btnMd.classList.add("active"); btnHtml.classList.remove("active");
+        mdEditorEl.style.display = ""; htmlEditorEl.style.display = "none";
+        hintEl.textContent = "Write or paste Markdown content. HTML pasted from other sources is auto-converted.";
+      }
+    }
+    btnMd.addEventListener("click", function () { activate("markdown"); });
+    btnHtml.addEventListener("click", function () { activate("html"); });
+    return { activate: activate };
   };
 
   // ══════════════════════════════════════════════════
@@ -223,7 +262,18 @@
       }
 
       if (typeof marked !== "undefined") {
-        previewEl.innerHTML = marked.parse(content);
+        var rawHtml = marked.parse(content);
+        // Sanitize: strip script tags and event handlers from preview
+        var temp = document.createElement("div");
+        temp.innerHTML = rawHtml;
+        temp.querySelectorAll("script,iframe,object,embed").forEach(function(el) { el.remove(); });
+        temp.querySelectorAll("*").forEach(function(el) {
+          Array.from(el.attributes).forEach(function(attr) {
+            if (attr.name.startsWith("on")) el.removeAttribute(attr.name);
+          });
+          if (el.tagName === "A" && el.href && /^javascript:/i.test(el.href)) el.removeAttribute("href");
+        });
+        previewEl.innerHTML = temp.innerHTML;
       } else {
         previewEl.textContent = content || "(preview unavailable — marked.js not loaded)";
       }
@@ -431,6 +481,14 @@
       document.getElementById("btnPreview")
     );
     window.initPasteHandler(document.getElementById("f_md"));
+    window.initContentTypeToggle(
+      document.getElementById("btnTypeMarkdown"),
+      document.getElementById("btnTypeHtml"),
+      document.getElementById("markdownEditor"),
+      document.getElementById("htmlEditor"),
+      document.getElementById("f_content_type"),
+      document.getElementById("contentTypeHint")
+    );
     initAccessToggle(document.getElementById("f_access"), document.getElementById("accessCodesSection"));
     initSectionToggle(document.getElementById("f_header"), document.getElementById("headerSection"));
     initLogoFilePreview(document.getElementById("f_logo"), document.getElementById("logoPreviewWrap"), document.getElementById("logoPreview"));
@@ -456,15 +514,36 @@
       btn.disabled = true;
       btn.textContent = "Creating\u2026";
 
+      var contentType = document.getElementById("f_content_type").value;
+
+      // Validate content is not empty
+      var contentVal = contentType === "html"
+        ? document.getElementById("f_html").value
+        : document.getElementById("f_md").value;
+      if (!contentVal || !contentVal.trim()) {
+        errEl.textContent = contentType === "html"
+          ? "HTML content cannot be empty."
+          : "Markdown content cannot be empty.";
+        errEl.classList.add("show");
+        btn.disabled = false;
+        btn.textContent = "Create Presentation";
+        return;
+      }
+
       var body = {
         title: document.getElementById("f_title").value.trim(),
-        markdown_content: document.getElementById("f_md").value,
+        content_type: contentType,
         description: document.getElementById("f_desc").value.trim() || null,
         tags: tagsWidget.getTags(),
         chat_enabled: document.getElementById("f_chat").checked,
         access_protected: document.getElementById("f_access").checked,
         header: getHeaderFields(),
       };
+      if (contentType === "html") {
+        body.html_content = document.getElementById("f_html").value;
+      } else {
+        body.markdown_content = document.getElementById("f_md").value;
+      }
       if (body.access_protected) {
         body.num_access_codes = parseInt(document.getElementById("f_num_codes").value, 10) || 3;
       }
@@ -480,7 +559,7 @@
       })
         .then(handleAuth)
         .then(function (r) {
-          if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || "Create failed"); });
+          if (!r.ok) return parseErrorResponse(r, "Create failed").then(function (msg) { throw new Error(msg); });
           return r.json();
         })
         .then(function (result) {
@@ -518,6 +597,14 @@
       document.getElementById("btnPreview")
     );
     window.initPasteHandler(document.getElementById("f_md"));
+    var contentTypeToggle = window.initContentTypeToggle(
+      document.getElementById("btnTypeMarkdown"),
+      document.getElementById("btnTypeHtml"),
+      document.getElementById("markdownEditor"),
+      document.getElementById("htmlEditor"),
+      document.getElementById("f_content_type"),
+      document.getElementById("contentTypeHint")
+    );
     initAccessToggle(document.getElementById("f_access"), document.getElementById("accessCodesSection"));
     initSectionToggle(document.getElementById("f_header"), document.getElementById("headerSection"));
     initLogoFilePreview(document.getElementById("f_logo"), document.getElementById("logoPreviewWrap"), document.getElementById("logoPreview"));
@@ -561,6 +648,13 @@
         document.getElementById("f_md").value = p.markdown_content || "";
         document.getElementById("f_chat").checked = p.chat_enabled !== false;
         tagsWidgetEdit.setTags(p.tags || []);
+
+        // Content type
+        var ct = p.content_type || "markdown";
+        contentTypeToggle.activate(ct);
+        if (ct === "html" && p.html_content) {
+          document.getElementById("f_html").value = p.html_content;
+        }
 
         // Access codes
         var accessCheckbox = document.getElementById("f_access");
@@ -712,15 +806,36 @@
       btn.textContent = "Updating\u2026";
 
       var isProtected = document.getElementById("f_access").checked;
+      var contentType = document.getElementById("f_content_type").value;
+
+      // Validate content is not empty
+      var contentVal = contentType === "html"
+        ? document.getElementById("f_html").value
+        : document.getElementById("f_md").value;
+      if (!contentVal || !contentVal.trim()) {
+        errEl.textContent = contentType === "html"
+          ? "HTML content cannot be empty."
+          : "Markdown content cannot be empty.";
+        errEl.classList.add("show");
+        btn.disabled = false;
+        btn.textContent = "Update Presentation";
+        return;
+      }
+
       var body = {
         title: document.getElementById("f_title").value.trim(),
-        markdown_content: document.getElementById("f_md").value,
+        content_type: contentType,
         description: document.getElementById("f_desc").value.trim() || null,
         tags: tagsWidgetEdit.getTags(),
         chat_enabled: document.getElementById("f_chat").checked,
         access_protected: isProtected,
         header: getHeaderFields(),
       };
+      if (contentType === "html") {
+        body.html_content = document.getElementById("f_html").value;
+      } else {
+        body.markdown_content = document.getElementById("f_md").value;
+      }
       if (isProtected) {
         body.access_codes = accessCodes;
       } else {
@@ -736,7 +851,7 @@
       })
         .then(handleAuth)
         .then(function (r) {
-          if (!r.ok) return r.json().then(function (d) { throw new Error(d.detail || "Update failed"); });
+          if (!r.ok) return parseErrorResponse(r, "Update failed").then(function (msg) { throw new Error(msg); });
           return r.json();
         })
         .then(function () {
@@ -759,6 +874,254 @@
           errEl.classList.add("show");
           btn.disabled = false;
           btn.textContent = "Update Presentation";
+        });
+    });
+  }
+  // ══════════════════════════════════════════════════
+  // AI Page Generator wizard
+  // ══════════════════════════════════════════════════
+  var aiModal = document.getElementById("aiModal");
+  var btnAiGenerate = document.getElementById("btnAiGenerate");
+
+  if (aiModal && btnAiGenerate) {
+    var aiSessionId = null;
+
+    // DOM refs
+    var aiStepPrompt = document.getElementById("aiStepPrompt");
+    var aiStepInterview = document.getElementById("aiStepInterview");
+    var aiStepLoading = document.getElementById("aiStepLoading");
+    var aiChatLog = document.getElementById("aiChatLog");
+    var aiQuestionsForm = document.getElementById("aiQuestionsForm");
+    var btnAiStart = document.getElementById("btnAiStart");
+    var btnAiDirect = document.getElementById("btnAiDirect");
+    var btnAiAnswer = document.getElementById("btnAiAnswer");
+    var btnAiClose = document.getElementById("btnAiClose");
+    var aiPromptEl = document.getElementById("aiPrompt");
+    var aiStatusEl = document.getElementById("aiStatus");
+    var aiFooterError = document.getElementById("aiFooterError");
+
+    function aiShowStep(step) {
+      aiStepPrompt.style.display = step === "prompt" ? "" : "none";
+      aiStepInterview.style.display = step === "interview" ? "" : "none";
+      aiStepLoading.style.display = step === "loading" ? "" : "none";
+      aiFooterError.style.display = "none";
+    }
+
+    function aiShowError(msg) {
+      aiFooterError.textContent = msg;
+      aiFooterError.style.display = "";
+    }
+
+    function aiAppendMsg(role, html) {
+      var div = document.createElement("div");
+      div.className = "ai-msg ai-msg-" + role;
+      div.innerHTML = html;
+      aiChatLog.appendChild(div);
+      aiChatLog.scrollTop = aiChatLog.scrollHeight;
+    }
+
+    function aiRenderQuestions(questions) {
+      if (!questions || !questions.length) return;
+      var html = '<ol class="ai-question-list">';
+      questions.forEach(function (q, i) {
+        html += '<li><label>' + esc(q) + '</label>' +
+          '<input type="text" data-ai-q="' + i + '" placeholder="Your answer..."></li>';
+      });
+      html += '</ol>';
+      aiQuestionsForm.innerHTML = html;
+      btnAiAnswer.disabled = false;
+
+      // Focus first input
+      var first = aiQuestionsForm.querySelector("input");
+      if (first) first.focus();
+    }
+
+    function aiInsertHtml(html) {
+      // Switch to HTML mode and insert
+      var ctToggle = document.getElementById("f_content_type");
+      var htmlTextarea = document.getElementById("f_html");
+      if (ctToggle) ctToggle.value = "html";
+      if (htmlTextarea) htmlTextarea.value = html;
+
+      // Activate the HTML toggle visually
+      var btnTypeMd = document.getElementById("btnTypeMarkdown");
+      var btnTypeH = document.getElementById("btnTypeHtml");
+      var mdEditor = document.getElementById("markdownEditor");
+      var htmlEditorEl = document.getElementById("htmlEditor");
+      if (btnTypeH) { btnTypeH.classList.add("active"); btnTypeMd.classList.remove("active"); }
+      if (mdEditor) mdEditor.style.display = "none";
+      if (htmlEditorEl) htmlEditorEl.style.display = "";
+      var hintEl = document.getElementById("contentTypeHint");
+      if (hintEl) hintEl.textContent = "Paste or write a full HTML page with styles and layout. Clean text is extracted automatically for AI chat indexing.";
+
+      // Close modal
+      aiModal.style.display = "none";
+    }
+
+    function aiCollectAnswers() {
+      var inputs = aiQuestionsForm.querySelectorAll("input[data-ai-q]");
+      var answers = [];
+      inputs.forEach(function (inp) { answers.push(inp.value); });
+      return answers;
+    }
+
+    // Safe error detail extractor (handles non-JSON error responses)
+    function aiParseError(r, fallback) {
+      return r.text().then(function (t) {
+        try { var d = JSON.parse(t); return d.detail || fallback; }
+        catch (e) { return fallback + " (HTTP " + r.status + ")"; }
+      });
+    }
+
+    // Open modal
+    btnAiGenerate.addEventListener("click", function () {
+      aiSessionId = null;
+      aiShowStep("prompt");
+      aiChatLog.innerHTML = "";
+      aiQuestionsForm.innerHTML = "";
+      aiPromptEl.value = "";
+      aiStatusEl.textContent = "";
+      btnAiAnswer.disabled = true;
+      aiModal.style.display = "";
+      aiPromptEl.focus();
+    });
+
+    // Close
+    btnAiClose.addEventListener("click", function () { aiModal.style.display = "none"; });
+    aiModal.addEventListener("click", function (e) {
+      if (e.target === aiModal) aiModal.style.display = "none";
+    });
+
+    // Start interview
+    btnAiStart.addEventListener("click", function () {
+      var prompt = aiPromptEl.value.trim();
+      if (!prompt) { aiShowError("Please describe the page you want."); return; }
+
+      btnAiStart.disabled = true;
+      btnAiDirect.disabled = true;
+      aiShowStep("loading");
+
+      fetch(API + "/api/ai/generate/start", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ prompt: prompt }),
+      })
+        .then(handleAuth)
+        .then(function (r) {
+          if (!r.ok) return aiParseError(r, "Failed to start").then(function (msg) { throw new Error(msg); });
+          return r.json();
+        })
+        .then(function (data) {
+          aiSessionId = data.session_id;
+          btnAiStart.disabled = false;
+          btnAiDirect.disabled = false;
+
+          if (data.status === "complete" && data.html) {
+            aiInsertHtml(data.html);
+            return;
+          }
+
+          aiShowStep("interview");
+          aiAppendMsg("user", esc(prompt));
+          if (data.questions && data.questions.length) {
+            var qhtml = "<strong>Let me ask a few questions:</strong><br>" +
+              data.questions.map(function (q) { return "• " + esc(q); }).join("<br>");
+            aiAppendMsg("assistant", qhtml);
+            aiRenderQuestions(data.questions);
+          }
+          aiStatusEl.textContent = "Round " + 1;
+        })
+        .catch(function (err) {
+          btnAiStart.disabled = false;
+          btnAiDirect.disabled = false;
+          aiShowStep("prompt");
+          aiShowError(err.message);
+        });
+    });
+
+    // Generate directly (skip interview)
+    btnAiDirect.addEventListener("click", function () {
+      var prompt = aiPromptEl.value.trim();
+      if (!prompt) { aiShowError("Please describe the page you want."); return; }
+
+      btnAiStart.disabled = true;
+      btnAiDirect.disabled = true;
+      aiShowStep("loading");
+
+      fetch(API + "/api/ai/generate/direct", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ prompt: prompt }),
+      })
+        .then(handleAuth)
+        .then(function (r) {
+          if (!r.ok) return aiParseError(r, "Generation failed").then(function (msg) { throw new Error(msg); });
+          return r.json();
+        })
+        .then(function (data) {
+          btnAiStart.disabled = false;
+          btnAiDirect.disabled = false;
+          if (data.html) {
+            aiInsertHtml(data.html);
+          } else {
+            aiShowStep("prompt");
+            aiShowError("No HTML was generated. Please try again with more detail.");
+          }
+        })
+        .catch(function (err) {
+          btnAiStart.disabled = false;
+          btnAiDirect.disabled = false;
+          aiShowStep("prompt");
+          aiShowError(err.message);
+        });
+    });
+
+    // Answer questions
+    btnAiAnswer.addEventListener("click", function () {
+      if (!aiSessionId) return;
+      var answers = aiCollectAnswers();
+      if (answers.every(function (a) { return !a.trim(); })) {
+        aiShowError("Please answer at least one question."); return;
+      }
+
+      // Show user answers in chat
+      var answerHtml = answers.filter(function (a) { return a.trim(); })
+        .map(function (a) { return esc(a); }).join("<br>");
+      aiAppendMsg("user", answerHtml);
+
+      btnAiAnswer.disabled = true;
+      aiQuestionsForm.innerHTML = '<div class="ai-spinner"></div>';
+      aiStatusEl.textContent = "Thinking\u2026";
+
+      fetch(API + "/api/ai/generate/" + aiSessionId + "/answer", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ answers: answers }),
+      })
+        .then(handleAuth)
+        .then(function (r) {
+          if (!r.ok) return aiParseError(r, "Failed to process answers").then(function (msg) { throw new Error(msg); });
+          return r.json();
+        })
+        .then(function (data) {
+          if (data.status === "complete" && data.html) {
+            aiInsertHtml(data.html);
+            return;
+          }
+
+          // More questions
+          if (data.questions && data.questions.length) {
+            var qhtml = data.questions.map(function (q) { return "• " + esc(q); }).join("<br>");
+            aiAppendMsg("assistant", qhtml);
+            aiRenderQuestions(data.questions);
+          }
+          aiStatusEl.textContent = "Round " + (data.round || "");
+        })
+        .catch(function (err) {
+          aiShowError(err.message);
+          btnAiAnswer.disabled = false;
+          aiQuestionsForm.innerHTML = "";
+          aiStatusEl.textContent = "";
         });
     });
   }

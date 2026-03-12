@@ -62,7 +62,12 @@ async def serve_page(slug: str, request: Request):
     except Exception as exc:
         logger.warning("Failed to track page view for slug=%s: %s", slug, exc)
 
-    html_content = render_markdown(doc["markdown_content"])
+    content_type = doc.get("content_type", "markdown")
+
+    if content_type == "html" and doc.get("html_content"):
+        html_content = doc["html_content"]
+    else:
+        html_content = render_markdown(doc.get("markdown_content", ""))
 
     # Build header context
     header = doc.get("header") or {}
@@ -75,6 +80,7 @@ async def serve_page(slug: str, request: Request):
             "request": request,
             "title": doc["title"],
             "description": doc.get("description") or "",
+            "content_type": content_type,
             "html_content": html_content,
             "presentation_id": str(doc["_id"]),
             "chat_enabled": "true" if doc.get("chat_enabled", True) else "false",

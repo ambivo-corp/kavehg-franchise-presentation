@@ -8,15 +8,18 @@ import string
 from datetime import datetime, timezone
 
 from bson import ObjectId
+from bson.errors import InvalidId
 from slugify import slugify
 
 from app.db import get_db
 from app.models.presentation import PresentationCreate, PresentationUpdate, PresentationResponse, PresentationDetail, HeaderConfig
 from app.services import kb_service
+from app.services.html_converter import html_to_markdown, _fallback_strip_tags
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 COLLECTION = "content_presentations"
+CHAT_QUERIES_COLLECTION = "content_chat_queries"
 
 
 _CODE_CHARS = string.ascii_uppercase + string.digits  # A-Z, 0-9
@@ -73,6 +76,7 @@ def _doc_to_response(doc: dict, base_url: str = "", stats: dict | None = None) -
         slug=doc["slug"],
         hosted_url=f"{base_url}/p/{doc['slug']}" if base_url else f"/p/{doc['slug']}",
         kb_name=doc["kb_name"],
+        content_type=doc.get("content_type", "markdown"),
         is_published=doc.get("is_published", True),
         chat_enabled=doc.get("chat_enabled", True),
         access_protected=doc.get("access_protected", False),
@@ -97,6 +101,7 @@ def _doc_to_detail(doc: dict, base_url: str = "", stats: dict | None = None) -> 
         slug=doc["slug"],
         hosted_url=f"{base_url}/p/{doc['slug']}" if base_url else f"/p/{doc['slug']}",
         kb_name=doc["kb_name"],
+        content_type=doc.get("content_type", "markdown"),
         is_published=doc.get("is_published", True),
         chat_enabled=doc.get("chat_enabled", True),
         access_protected=doc.get("access_protected", False),
@@ -107,6 +112,7 @@ def _doc_to_detail(doc: dict, base_url: str = "", stats: dict | None = None) -> 
         created_at=doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else str(doc["created_at"]),
         updated_at=doc["updated_at"].isoformat() if isinstance(doc["updated_at"], datetime) else str(doc["updated_at"]),
         markdown_content=doc.get("markdown_content", ""),
+        html_content=doc.get("html_content"),
         num_views=doc.get("num_views", 0),
         total_chat_queries=s.get("total", 0),
         today_chat_queries=s.get("today", 0),
@@ -163,10 +169,31 @@ async def create(
     slug = await _unique_slug(slugify(data.slug or data.title))
     kb_name = _kb_name(tenant_id, slug)
 
+    content_type = data.content_type or "markdown"
+
+    # Determine the text to index into KB (always clean Markdown, never raw HTML)
+    if content_type == "html":
+        if not data.html_content or not data.html_content.strip():
+            raise ValueError("HTML content is required when content type is 'html'")
+        html_content = data.html_content
+        kb_text = html_to_markdown(html_content)
+        if not kb_text.strip():
+            logger.warning("html_to_markdown returned empty for slug=%s, using stripped text fallback", slug)
+            kb_text = _fallback_strip_tags(html_content)
+        markdown_content = kb_text  # store converted MD for KB reference
+    else:
+        content_type = "markdown"
+        kb_text = data.markdown_content
+        markdown_content = data.markdown_content
+        html_content = None
+
+    if not kb_text or not kb_text.strip():
+        raise ValueError("Content cannot be empty")
+
     # Create KB + index content
     try:
         await kb_service.create_kb(kb_name, tenant_id, user_id)
-        await kb_service.index_text(kb_name, data.markdown_content, tenant_id, user_id, display_file_name=data.title)
+        await kb_service.index_text(kb_name, kb_text, tenant_id, user_id, display_file_name=data.title)
     except Exception:
         logger.exception(f"KB creation/indexing failed for {kb_name}")
         raise
@@ -179,7 +206,9 @@ async def create(
         "userid": user_id,
         "title": data.title,
         "slug": slug,
-        "markdown_content": data.markdown_content,
+        "content_type": content_type,
+        "markdown_content": markdown_content,
+        "html_content": html_content,
         "kb_name": kb_name,
         "is_published": True,
         "chat_enabled": data.chat_enabled,
@@ -191,9 +220,17 @@ async def create(
         "created_at": now,
         "updated_at": now,
     }
-    result = await coll.insert_one(doc)
+    try:
+        result = await coll.insert_one(doc)
+    except Exception:
+        logger.warning("insert_one failed for slug=%s, cleaning up orphaned KB %s", slug, kb_name)
+        try:
+            await kb_service.delete_kb(kb_name, tenant_id, user_id)
+        except Exception:
+            logger.exception("Failed to clean up KB %s after insert_one failure", kb_name)
+        raise
     doc["_id"] = result.inserted_id
-    logger.info(f"Created presentation '{data.title}' slug={slug} kb={kb_name}")
+    logger.info("Created presentation '%s' slug=%s kb=%s content_type=%s", data.title, slug, kb_name, content_type)
     return _doc_to_response(doc, base_url)
 
 
@@ -215,9 +252,46 @@ async def update(
     if data.chat_enabled is not None:
         updates["chat_enabled"] = data.chat_enabled
 
-    if data.markdown_content is not None and data.markdown_content != doc.get("markdown_content"):
-        updates["markdown_content"] = data.markdown_content
-        # Re-index KB
+    # Content type switch
+    if data.content_type is not None:
+        updates["content_type"] = data.content_type
+
+    current_content_type = updates.get("content_type", doc.get("content_type", "markdown"))
+    previous_content_type = doc.get("content_type", "markdown")
+
+    # Validate content type switch has matching content
+    if current_content_type != previous_content_type:
+        if current_content_type == "html" and (data.html_content is None or not data.html_content.strip()):
+            raise ValueError("HTML content is required when switching to HTML content type")
+        if current_content_type == "markdown" and (data.markdown_content is None or not data.markdown_content.strip()):
+            raise ValueError("Markdown content is required when switching to Markdown content type")
+
+    # Determine if content changed and needs KB re-index
+    content_changed = False
+    kb_text = None
+
+    if current_content_type == "html" and data.html_content is not None:
+        if not data.html_content.strip():
+            raise ValueError("HTML content cannot be empty")
+        if data.html_content != doc.get("html_content"):
+            content_changed = True
+            updates["html_content"] = data.html_content
+            kb_text = html_to_markdown(data.html_content)
+            if not kb_text.strip():
+                logger.warning("html_to_markdown returned empty on update for %s, using stripped text fallback", presentation_id)
+                kb_text = _fallback_strip_tags(data.html_content)
+            updates["markdown_content"] = kb_text  # keep MD in sync for KB
+    elif current_content_type == "markdown" and data.markdown_content is not None:
+        if not data.markdown_content.strip():
+            raise ValueError("Markdown content cannot be empty")
+        if data.markdown_content != doc.get("markdown_content"):
+            content_changed = True
+            updates["markdown_content"] = data.markdown_content
+            updates["html_content"] = None  # clear HTML when switching to MD
+            kb_text = data.markdown_content
+
+    if content_changed and kb_text is not None:
+        # Re-index KB with clean text
         kb_name = doc["kb_name"]
         kb_user_id = doc.get("userid", doc.get("user_id", ""))
         try:
@@ -232,7 +306,7 @@ async def update(
                 raise
         try:
             await kb_service.index_text(
-                kb_name, data.markdown_content, tenant_id, kb_user_id,
+                kb_name, kb_text, tenant_id, kb_user_id,
                 display_file_name=data.title or doc["title"],
             )
         except Exception:
@@ -327,7 +401,7 @@ async def get_by_slug(slug: str) -> dict | None:
 
 async def list_by_tenant(tenant_id: str, base_url: str = "") -> list[PresentationResponse]:
     coll = get_db()[COLLECTION]
-    docs = await coll.find({"tenant_id": tenant_id}, {"header_logo": 0}).sort("created_at", -1).to_list(500)
+    docs = await coll.find({"tenant_id": tenant_id}, {"header_logo": 0, "html_content": 0, "markdown_content": 0}).sort("created_at", -1).to_list(500)
     pids = [str(d["_id"]) for d in docs]
     stats = await _chat_query_stats(pids)
     return [_doc_to_response(d, base_url, stats.get(str(d["_id"]))) for d in docs]
@@ -384,9 +458,6 @@ async def delete_logo(presentation_id: str, tenant_id: str, base_url: str = "") 
     doc["has_header_logo"] = False
     doc["updated_at"] = now
     return _doc_to_response(doc, base_url)
-
-
-CHAT_QUERIES_COLLECTION = "content_chat_queries"
 
 
 async def list_chat_queries(

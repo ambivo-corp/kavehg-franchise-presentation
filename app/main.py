@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.db import connect_db, close_db
-from app.routes import health, presentations, public, chat, auth_routes
+from app.routes import health, presentations, public, chat, auth_routes, ai_generate
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -50,6 +50,7 @@ app.include_router(auth_routes.router)
 app.include_router(presentations.router)
 app.include_router(public.router)
 app.include_router(chat.router)
+app.include_router(ai_generate.router)
 
 
 if __name__ == "__main__":

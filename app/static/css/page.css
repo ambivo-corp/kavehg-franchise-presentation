@@ -58,6 +58,17 @@ body {
   padding: 0 1.25rem;
 }
 
+/* ── HTML iframe mode ── */
+.html-frame {
+  display: block;
+  width: 100%;
+  max-width: 960px;
+  margin: 2rem auto;
+  border: none;
+  min-height: 400px;
+  overflow: hidden;
+}
+
 /* ── Typography ── */
 .content h1 { font-size: 2rem; margin: 2rem 0 1rem; border-bottom: 1px solid #e5e7eb; padding-bottom: .3rem; }
 .content h2 { font-size: 1.5rem; margin: 1.75rem 0 .75rem; border-bottom: 1px solid #e5e7eb; padding-bottom: .25rem; }

@@ -1,6 +1,8 @@
 """
 Pydantic models for presentations
 """
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -25,7 +27,9 @@ class HeaderUpdate(BaseModel):
 
 class PresentationCreate(BaseModel):
     title: str
-    markdown_content: str
+    markdown_content: str = ""
+    html_content: str | None = None
+    content_type: Literal["markdown", "html"] = "markdown"
     slug: str | None = None
     description: str | None = None
     tags: list[str] = []
@@ -38,6 +42,8 @@ class PresentationCreate(BaseModel):
 class PresentationUpdate(BaseModel):
     title: str | None = None
     markdown_content: str | None = None
+    html_content: str | None = None
+    content_type: Literal["markdown", "html"] | None = None
     description: str | None = None
     tags: list[str] | None = None
     chat_enabled: bool | None = None
@@ -54,6 +60,7 @@ class PresentationResponse(BaseModel):
     slug: str
     hosted_url: str
     kb_name: str
+    content_type: str = "markdown"  # "markdown" or "html"
     is_published: bool
     chat_enabled: bool
     access_protected: bool = False
@@ -71,6 +78,7 @@ class PresentationResponse(BaseModel):
 
 class PresentationDetail(PresentationResponse):
     markdown_content: str
+    html_content: str | None = None
 
 
 class ChatRequest(BaseModel):
