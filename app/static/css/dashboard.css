@@ -202,12 +202,11 @@ tr:last-child td { border-bottom: none; }
 .content-type-toggle {
   display: flex;
   gap: .5rem;
-  margin-bottom: .5rem;
 }
 .content-type-toggle button {
-  padding: .4rem 1rem;
+  padding: .35rem .9rem;
   border-radius: 6px;
-  font-size: .85rem;
+  font-size: .84rem;
   font-weight: 600;
   cursor: pointer;
   border: 1px solid #d1d5db;
@@ -431,9 +430,9 @@ tr:last-child td { border-bottom: none; }
   display: inline-flex;
   align-items: center;
   gap: .25rem;
-  padding: .28rem .6rem;
-  border-radius: 5px;
-  font-size: .78rem;
+  padding: .35rem .75rem;
+  border-radius: 6px;
+  font-size: .82rem;
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;

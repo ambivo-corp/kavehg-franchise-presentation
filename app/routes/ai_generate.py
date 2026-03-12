@@ -59,6 +59,26 @@ def _validate_session_id(session_id: str) -> None:
 
 # ── Endpoints ────────────────────────────────────────────────────────────
 
+@router.get("/generate/available")
+async def check_ai_available(
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Check if AI generation is available for this tenant.
+
+    Returns {"available": true/false, "reason": "..."}.
+    Used by the frontend to show/hide the AI Generate button.
+    """
+    if not settings.anthropic_api_key:
+        return {"available": False, "reason": "AI generation is not configured on this instance."}
+
+    tenant_id = user["tenant_id"]
+    quota = await check_genai_quota(tenant_id)
+    if not quota.get("allowed", True):
+        reason = quota.get("error", "GenAI quota exhausted.")
+        return {"available": False, "reason": reason}
+
+    return {"available": True}
+
 @router.post("/generate/start")
 async def start_generation(
     data: StartRequest,

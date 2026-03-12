@@ -884,6 +884,21 @@
   var btnAiGenerate = document.getElementById("btnAiGenerate");
 
   if (aiModal && btnAiGenerate) {
+    // Hide button by default; show only if AI is available for this tenant
+    btnAiGenerate.style.display = "none";
+    fetch(API + "/api/ai/generate/available", { headers: authHeaders() })
+      .then(handleAuth)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.available) {
+          btnAiGenerate.style.display = "";
+        }
+        // If not available, button stays hidden — no error shown
+      })
+      .catch(function () {
+        // On network error, keep button hidden
+      });
+
     var aiSessionId = null;
 
     // DOM refs
