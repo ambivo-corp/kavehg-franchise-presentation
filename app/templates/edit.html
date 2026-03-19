@@ -122,6 +122,44 @@
             </div>
           </div>
 
+          <!-- Page Theme -->
+          <div class="toggle-row">
+            <label for="f_theme_toggle">Page theme</label>
+            <div class="toggle">
+              <input type="checkbox" id="f_theme_toggle">
+              <span class="slider"></span>
+            </div>
+          </div>
+          <p class="form-hint">Customize colors, font, and dark mode for your hosted page.</p>
+          <div id="themeSection" style="display:none">
+            <div class="header-fields">
+              <label>Theme Preset</label>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:.75rem">
+                <button type="button" class="theme-preset-btn" data-preset="modern" style="border:1px solid #e5e7eb;border-radius:6px;padding:.5rem;text-align:left;cursor:pointer;background:#fff"><div style="display:flex;gap:3px;margin-bottom:4px"><span style="width:14px;height:14px;border-radius:50%;background:#2563eb;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;background:#4f46e5;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;background:#f59e0b;display:inline-block"></span></div><span style="font-size:.8rem;font-weight:600">Modern</span></button>
+                <button type="button" class="theme-preset-btn" data-preset="minimal" style="border:1px solid #e5e7eb;border-radius:6px;padding:.5rem;text-align:left;cursor:pointer;background:#fff"><div style="display:flex;gap:3px;margin-bottom:4px"><span style="width:14px;height:14px;border-radius:50%;background:#475569;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;background:#64748b;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;background:#94a3b8;display:inline-block"></span></div><span style="font-size:.8rem;font-weight:600">Minimal</span></button>
+                <button type="button" class="theme-preset-btn" data-preset="bold" style="border:1px solid #e5e7eb;border-radius:6px;padding:.5rem;text-align:left;cursor:pointer;background:#fff"><div style="display:flex;gap:3px;margin-bottom:4px"><span style="width:14px;height:14px;border-radius:50%;background:#7c3aed;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;background:#ec4899;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;background:#f97316;display:inline-block"></span></div><span style="font-size:.8rem;font-weight:600">Bold</span></button>
+                <button type="button" class="theme-preset-btn" data-preset="warm" style="border:1px solid #e5e7eb;border-radius:6px;padding:.5rem;text-align:left;cursor:pointer;background:#fff"><div style="display:flex;gap:3px;margin-bottom:4px"><span style="width:14px;height:14px;border-radius:50%;background:#ea580c;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;background:#d97706;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;background:#dc2626;display:inline-block"></span></div><span style="font-size:.8rem;font-weight:600">Warm</span></button>
+                <button type="button" class="theme-preset-btn" data-preset="nature" style="border:1px solid #e5e7eb;border-radius:6px;padding:.5rem;text-align:left;cursor:pointer;background:#fff"><div style="display:flex;gap:3px;margin-bottom:4px"><span style="width:14px;height:14px;border-radius:50%;background:#059669;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;background:#10b981;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;background:#0d9488;display:inline-block"></span></div><span style="font-size:.8rem;font-weight:600">Nature</span></button>
+                <button type="button" class="theme-preset-btn" data-preset="dark" style="border:1px solid #e5e7eb;border-radius:6px;padding:.5rem;text-align:left;cursor:pointer;background:#1e293b"><div style="display:flex;gap:3px;margin-bottom:4px"><span style="width:14px;height:14px;border-radius:50%;background:#06b6d4;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;background:#8b5cf6;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;background:#f59e0b;display:inline-block"></span></div><span style="font-size:.8rem;font-weight:600;color:#f1f5f9">Dark</span></button>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+                <div><label for="f_theme_primary" style="font-size:.85rem">Primary</label><div style="display:flex;align-items:center;gap:.5rem"><input type="color" id="f_theme_primary" value="#2563eb" style="width:32px;height:32px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer"><span id="f_theme_primary_hex" style="font-size:.75rem;font-family:monospace;color:#6b7280">#2563eb</span></div></div>
+                <div><label for="f_theme_secondary" style="font-size:.85rem">Secondary</label><div style="display:flex;align-items:center;gap:.5rem"><input type="color" id="f_theme_secondary" value="#4f46e5" style="width:32px;height:32px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer"><span id="f_theme_secondary_hex" style="font-size:.75rem;font-family:monospace;color:#6b7280">#4f46e5</span></div></div>
+                <div><label for="f_theme_accent" style="font-size:.85rem">Accent</label><div style="display:flex;align-items:center;gap:.5rem"><input type="color" id="f_theme_accent" value="#f59e0b" style="width:32px;height:32px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer"><span id="f_theme_accent_hex" style="font-size:.75rem;font-family:monospace;color:#6b7280">#f59e0b</span></div></div>
+              </div>
+              <label for="f_theme_font">Font Family</label>
+              <select id="f_theme_font" style="margin-bottom:.75rem">
+                <option value="System Default">System Default</option>
+                <option value="Inter">Inter</option><option value="DM Sans">DM Sans</option><option value="Space Grotesk">Space Grotesk</option>
+                <option value="Nunito">Nunito</option><option value="Outfit">Outfit</option><option value="JetBrains Mono">JetBrains Mono</option>
+                <option value="Poppins">Poppins</option><option value="Lato">Lato</option><option value="Roboto">Roboto</option>
+              </select>
+              <div class="toggle-row" style="margin-bottom:.75rem"><label for="f_theme_dark">Dark mode</label><div class="toggle"><input type="checkbox" id="f_theme_dark"><span class="slider"></span></div></div>
+              <label for="f_theme_css">Custom CSS (optional, max 10KB)</label>
+              <textarea id="f_theme_css" rows="4" placeholder="/* Custom CSS */" style="font-family:monospace;font-size:.8rem"></textarea>
+            </div>
+          </div>
+
           <label>Content Type</label>
           <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem">
             <div class="content-type-toggle">

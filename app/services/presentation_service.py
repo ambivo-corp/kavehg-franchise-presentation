@@ -12,7 +12,7 @@ from bson.errors import InvalidId
 from slugify import slugify
 
 from app.db import get_db
-from app.models.presentation import PresentationCreate, PresentationUpdate, PresentationResponse, PresentationDetail, HeaderConfig
+from app.models.presentation import PresentationCreate, PresentationUpdate, PresentationResponse, PresentationDetail, HeaderConfig, ThemeConfig, THEME_PRESETS
 from app.services import kb_service
 from app.services.html_converter import html_to_markdown, _fallback_strip_tags
 from app.config import settings
@@ -67,6 +67,39 @@ def _build_header(doc: dict, base_url: str = "") -> HeaderConfig:
     )
 
 
+def _resolve_theme(theme_update) -> dict:
+    """Resolve a ThemeUpdate into a complete theme dict, applying preset if specified."""
+    if not theme_update:
+        return {}
+    data = theme_update.model_dump(exclude_none=True) if hasattr(theme_update, 'model_dump') else theme_update
+    preset_name = data.get("preset")
+    if preset_name and preset_name in THEME_PRESETS:
+        merged = dict(THEME_PRESETS[preset_name])
+        merged["preset"] = preset_name
+        # Individual overrides take precedence over preset
+        for key in ["primary_color", "secondary_color", "accent_color", "font_family", "dark_mode", "custom_css"]:
+            if key in data and key not in THEME_PRESETS.get(preset_name, {}):
+                merged[key] = data[key]
+            elif key in data and data[key] != THEME_PRESETS.get(preset_name, {}).get(key):
+                # Only override if explicitly different from preset default
+                pass
+        return merged
+    return data
+
+
+def _build_theme(doc: dict) -> ThemeConfig:
+    t = doc.get("theme") or {}
+    return ThemeConfig(
+        preset=t.get("preset"),
+        primary_color=t.get("primary_color", "#2563eb"),
+        secondary_color=t.get("secondary_color", "#4f46e5"),
+        accent_color=t.get("accent_color", "#f59e0b"),
+        font_family=t.get("font_family", "System Default"),
+        dark_mode=t.get("dark_mode", False),
+        custom_css=t.get("custom_css", ""),
+    )
+
+
 def _doc_to_response(doc: dict, base_url: str = "", stats: dict | None = None) -> PresentationResponse:
     s = stats or {}
     return PresentationResponse(
@@ -82,6 +115,7 @@ def _doc_to_response(doc: dict, base_url: str = "", stats: dict | None = None) -
         access_protected=doc.get("access_protected", False),
         access_codes=doc.get("access_codes", []),
         header=_build_header(doc, base_url),
+        theme=_build_theme(doc),
         description=doc.get("description"),
         tags=doc.get("tags", []),
         created_at=doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else str(doc["created_at"]),
@@ -107,6 +141,7 @@ def _doc_to_detail(doc: dict, base_url: str = "", stats: dict | None = None) -> 
         access_protected=doc.get("access_protected", False),
         access_codes=doc.get("access_codes", []),
         header=_build_header(doc, base_url),
+        theme=_build_theme(doc),
         description=doc.get("description"),
         tags=doc.get("tags", []),
         created_at=doc["created_at"].isoformat() if isinstance(doc["created_at"], datetime) else str(doc["created_at"]),
@@ -217,6 +252,7 @@ async def create(
         "description": data.description,
         "tags": data.tags,
         "header": data.header.model_dump(exclude_none=True) if data.header else {},
+        "theme": _resolve_theme(data.theme),
         "created_at": now,
         "updated_at": now,
     }
@@ -336,6 +372,17 @@ async def update(
         header_update = data.header.model_dump(exclude_none=True)
         existing_header.update(header_update)
         updates["header"] = existing_header
+
+    # Theme
+    if data.theme is not None:
+        existing_theme = doc.get("theme") or {}
+        theme_data = _resolve_theme(data.theme)
+        existing_theme.update(theme_data)
+        # Validate custom_css
+        css = existing_theme.get("custom_css", "")
+        if len(css) > 10240:
+            raise ValueError("Custom CSS exceeds 10KB limit")
+        updates["theme"] = existing_theme
 
     if not updates:
         return _doc_to_response(doc, base_url)

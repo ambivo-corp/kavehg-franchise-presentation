@@ -1,13 +1,35 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"{% if theme_dark_mode %} class="dark"{% endif %}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ title }}</title>
   {% if description %}<meta name="description" content="{{ description }}">{% endif %}
   <link rel="icon" type="image/png" href="/static/img/favicon.png">
+  {% if theme_font_family and theme_font_family != "System Default" %}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family={{ theme_font_family | replace(' ', '+') }}:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  {% endif %}
   <link rel="stylesheet" href="/static/css/page.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  {% if content_type != "html" %}
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/{% if theme_dark_mode %}github-dark{% else %}github{% endif %}.min.css">
+  {% endif %}
+  <style>
+    :root {
+      --primary: {{ theme_primary_color }};
+      --secondary: {{ theme_secondary_color }};
+      --accent: {{ theme_accent_color }};
+    }
+    {% if theme_font_family and theme_font_family != "System Default" %}
+    body { font-family: '{{ theme_font_family }}', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    {% endif %}
+  </style>
+  {% if theme_custom_css %}
+  <style id="custom-css">
+{{ theme_custom_css }}
+  </style>
+  {% endif %}
 </head>
 <body>
   {% if header_enabled %}
@@ -68,11 +90,9 @@
 
   {% if content_type == "html" %}
   <script>
-  // Listen for height messages from sandboxed iframe (resize script injected server-side)
   (function() {
     var frame = document.getElementById("htmlFrame");
     window.addEventListener("message", function(e) {
-      // Only accept messages from the sandboxed iframe (opaque "null" origin)
       if (e.source !== frame.contentWindow) return;
       if (e.data && typeof e.data.cpFrameHeight === "number") {
         var h = Math.min(Math.max(e.data.cpFrameHeight, 100), 50000);
@@ -85,10 +105,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script>hljs.highlightAll();</script>
   <script>
-  // Hide broken images
   document.querySelectorAll(".content img").forEach(function(img) {
     img.addEventListener("error", function() { img.classList.add("broken"); });
-    // Handle already-failed images (cached failures)
     if (img.complete && img.naturalWidth === 0 && img.src) { img.classList.add("broken"); }
   });
   </script>

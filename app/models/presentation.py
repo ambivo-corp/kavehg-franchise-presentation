@@ -6,6 +6,38 @@ from typing import Literal
 from pydantic import BaseModel
 
 
+class ThemeConfig(BaseModel):
+    """Visual theme for a hosted page."""
+    preset: str | None = None       # "modern", "minimal", "bold", "warm", "nature", "dark"
+    primary_color: str = "#2563eb"
+    secondary_color: str = "#4f46e5"
+    accent_color: str = "#f59e0b"
+    font_family: str = "System Default"
+    dark_mode: bool = False
+    custom_css: str = ""
+
+
+class ThemeUpdate(BaseModel):
+    preset: str | None = None
+    primary_color: str | None = None
+    secondary_color: str | None = None
+    accent_color: str | None = None
+    font_family: str | None = None
+    dark_mode: bool | None = None
+    custom_css: str | None = None
+
+
+# Theme presets — coordinated palettes
+THEME_PRESETS: dict[str, dict] = {
+    "modern": {"primary_color": "#2563eb", "secondary_color": "#4f46e5", "accent_color": "#f59e0b", "font_family": "Inter", "dark_mode": False},
+    "minimal": {"primary_color": "#475569", "secondary_color": "#64748b", "accent_color": "#94a3b8", "font_family": "DM Sans", "dark_mode": False},
+    "bold": {"primary_color": "#7c3aed", "secondary_color": "#ec4899", "accent_color": "#f97316", "font_family": "Space Grotesk", "dark_mode": False},
+    "warm": {"primary_color": "#ea580c", "secondary_color": "#d97706", "accent_color": "#dc2626", "font_family": "Nunito", "dark_mode": False},
+    "nature": {"primary_color": "#059669", "secondary_color": "#10b981", "accent_color": "#0d9488", "font_family": "Outfit", "dark_mode": False},
+    "dark": {"primary_color": "#06b6d4", "secondary_color": "#8b5cf6", "accent_color": "#f59e0b", "font_family": "JetBrains Mono", "dark_mode": True},
+}
+
+
 class HeaderConfig(BaseModel):
     enabled: bool = False
     logo_url: str | None = None  # served via /p/{slug}/logo
@@ -37,6 +69,7 @@ class PresentationCreate(BaseModel):
     access_protected: bool = False
     num_access_codes: int = 3
     header: HeaderUpdate | None = None
+    theme: ThemeUpdate | None = None
 
 
 class PresentationUpdate(BaseModel):
@@ -51,6 +84,7 @@ class PresentationUpdate(BaseModel):
     access_codes: list[str] | None = None
     regenerate_codes: int | None = None
     header: HeaderUpdate | None = None
+    theme: ThemeUpdate | None = None
 
 
 class PresentationResponse(BaseModel):
@@ -66,6 +100,7 @@ class PresentationResponse(BaseModel):
     access_protected: bool = False
     access_codes: list[str] = []
     header: HeaderConfig = HeaderConfig()
+    theme: ThemeConfig = ThemeConfig()
     description: str | None = None
     tags: list[str] = []
     created_at: str

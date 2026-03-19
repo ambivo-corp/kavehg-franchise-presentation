@@ -74,6 +74,9 @@ async def serve_page(slug: str, request: Request):
     header_enabled = header.get("enabled", False)
     has_logo = doc.get("has_header_logo", False)
 
+    # Build theme context
+    theme = doc.get("theme") or {}
+
     return templates.TemplateResponse(
         "page.html",
         {
@@ -92,6 +95,13 @@ async def serve_page(slug: str, request: Request):
             "header_email": header.get("email") or "",
             "header_phone": header.get("phone") or "",
             "header_text": header.get("text") or "",
+            # Theme
+            "theme_primary_color": theme.get("primary_color", "#2563eb"),
+            "theme_secondary_color": theme.get("secondary_color", "#4f46e5"),
+            "theme_accent_color": theme.get("accent_color", "#f59e0b"),
+            "theme_font_family": theme.get("font_family", "System Default"),
+            "theme_dark_mode": theme.get("dark_mode", False),
+            "theme_custom_css": theme.get("custom_css", ""),
         },
     )
 

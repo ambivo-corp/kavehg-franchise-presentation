@@ -370,6 +370,105 @@
     });
   }
 
+  var THEME_PRESETS = {
+    modern: {primary_color:"#2563eb",secondary_color:"#4f46e5",accent_color:"#f59e0b",font_family:"Inter",dark_mode:false},
+    minimal: {primary_color:"#475569",secondary_color:"#64748b",accent_color:"#94a3b8",font_family:"DM Sans",dark_mode:false},
+    bold: {primary_color:"#7c3aed",secondary_color:"#ec4899",accent_color:"#f97316",font_family:"Space Grotesk",dark_mode:false},
+    warm: {primary_color:"#ea580c",secondary_color:"#d97706",accent_color:"#dc2626",font_family:"Nunito",dark_mode:false},
+    nature: {primary_color:"#059669",secondary_color:"#10b981",accent_color:"#0d9488",font_family:"Outfit",dark_mode:false},
+    dark: {primary_color:"#06b6d4",secondary_color:"#8b5cf6",accent_color:"#f59e0b",font_family:"JetBrains Mono",dark_mode:true},
+  };
+
+  function initThemeSection() {
+    var toggle = document.getElementById("f_theme_toggle");
+    var section = document.getElementById("themeSection");
+    if (!toggle || !section) return;
+    initSectionToggle(toggle, section);
+
+    // Color picker hex display sync
+    ["primary","secondary","accent"].forEach(function(name) {
+      var input = document.getElementById("f_theme_" + name);
+      var hex = document.getElementById("f_theme_" + name + "_hex");
+      if (input && hex) {
+        input.addEventListener("input", function() { hex.textContent = input.value; });
+      }
+    });
+
+    // Preset buttons
+    document.querySelectorAll(".theme-preset-btn").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        var preset = btn.getAttribute("data-preset");
+        var p = THEME_PRESETS[preset];
+        if (!p) return;
+        document.getElementById("f_theme_primary").value = p.primary_color;
+        document.getElementById("f_theme_primary_hex").textContent = p.primary_color;
+        document.getElementById("f_theme_secondary").value = p.secondary_color;
+        document.getElementById("f_theme_secondary_hex").textContent = p.secondary_color;
+        document.getElementById("f_theme_accent").value = p.accent_color;
+        document.getElementById("f_theme_accent_hex").textContent = p.accent_color;
+        document.getElementById("f_theme_font").value = p.font_family;
+        document.getElementById("f_theme_dark").checked = p.dark_mode;
+        // Highlight selected preset
+        document.querySelectorAll(".theme-preset-btn").forEach(function(b) {
+          b.style.borderColor = "#e5e7eb";
+          b.style.boxShadow = "none";
+        });
+        btn.style.borderColor = p.primary_color;
+        btn.style.boxShadow = "0 0 0 2px " + p.primary_color + "40";
+        // Store preset name
+        var hiddenPreset = document.getElementById("f_theme_preset_value");
+        if (!hiddenPreset) {
+          hiddenPreset = document.createElement("input");
+          hiddenPreset.type = "hidden";
+          hiddenPreset.id = "f_theme_preset_value";
+          section.appendChild(hiddenPreset);
+        }
+        hiddenPreset.value = preset;
+      });
+    });
+  }
+
+  function populateThemeFields(theme) {
+    if (!theme) return;
+    var toggle = document.getElementById("f_theme_toggle");
+    var section = document.getElementById("themeSection");
+    if (!toggle || !section) return;
+    // Enable theme section if any non-default values
+    var hasTheme = theme.primary_color !== "#2563eb" || theme.font_family !== "System Default" || theme.dark_mode;
+    if (hasTheme || theme.preset) {
+      toggle.checked = true;
+      section.style.display = "";
+    }
+    if (theme.primary_color) { document.getElementById("f_theme_primary").value = theme.primary_color; document.getElementById("f_theme_primary_hex").textContent = theme.primary_color; }
+    if (theme.secondary_color) { document.getElementById("f_theme_secondary").value = theme.secondary_color; document.getElementById("f_theme_secondary_hex").textContent = theme.secondary_color; }
+    if (theme.accent_color) { document.getElementById("f_theme_accent").value = theme.accent_color; document.getElementById("f_theme_accent_hex").textContent = theme.accent_color; }
+    if (theme.font_family) document.getElementById("f_theme_font").value = theme.font_family;
+    if (theme.dark_mode) document.getElementById("f_theme_dark").checked = true;
+    if (theme.custom_css) document.getElementById("f_theme_css").value = theme.custom_css;
+    // Highlight preset button
+    if (theme.preset) {
+      var btn = document.querySelector('.theme-preset-btn[data-preset="' + theme.preset + '"]');
+      if (btn) {
+        btn.style.borderColor = theme.primary_color;
+        btn.style.boxShadow = "0 0 0 2px " + theme.primary_color + "40";
+      }
+    }
+  }
+
+  function getThemeFields() {
+    var toggle = document.getElementById("f_theme_toggle");
+    if (!toggle || !toggle.checked) return null;
+    return {
+      primary_color: (document.getElementById("f_theme_primary") || {}).value || "#2563eb",
+      secondary_color: (document.getElementById("f_theme_secondary") || {}).value || "#4f46e5",
+      accent_color: (document.getElementById("f_theme_accent") || {}).value || "#f59e0b",
+      font_family: (document.getElementById("f_theme_font") || {}).value || "System Default",
+      dark_mode: document.getElementById("f_theme_dark") ? document.getElementById("f_theme_dark").checked : false,
+      custom_css: (document.getElementById("f_theme_css") || {}).value || "",
+      preset: document.getElementById("f_theme_preset_value") ? document.getElementById("f_theme_preset_value").value : null,
+    };
+  }
+
   function getHeaderFields() {
     return {
       enabled: document.getElementById("f_header") ? document.getElementById("f_header").checked : false,
@@ -516,6 +615,7 @@
     window.initHtmlPreview();
     initAccessToggle(document.getElementById("f_access"), document.getElementById("accessCodesSection"));
     initSectionToggle(document.getElementById("f_header"), document.getElementById("headerSection"));
+    initThemeSection();
     initLogoFilePreview(document.getElementById("f_logo"), document.getElementById("logoPreviewWrap"), document.getElementById("logoPreview"));
 
     // Auto-generate slug from title
@@ -564,6 +664,8 @@
         access_protected: document.getElementById("f_access").checked,
         header: getHeaderFields(),
       };
+      var themeData = getThemeFields();
+      if (themeData) body.theme = themeData;
       if (contentType === "html") {
         body.html_content = document.getElementById("f_html").value;
       } else {
@@ -633,6 +735,7 @@
     window.initHtmlPreview();
     initAccessToggle(document.getElementById("f_access"), document.getElementById("accessCodesSection"));
     initSectionToggle(document.getElementById("f_header"), document.getElementById("headerSection"));
+    initThemeSection();
     initLogoFilePreview(document.getElementById("f_logo"), document.getElementById("logoPreviewWrap"), document.getElementById("logoPreview"));
 
     var pendingLogoDelete = false;
@@ -706,6 +809,9 @@
           document.getElementById("logoPreview").src = h.logo_url;
           document.getElementById("logoPreviewWrap").style.display = "";
         }
+
+        // Theme
+        populateThemeFields(p.theme);
 
         // Stats bar
         var statsBar = document.getElementById("statsBar");
@@ -857,6 +963,8 @@
         access_protected: isProtected,
         header: getHeaderFields(),
       };
+      var themeData = getThemeFields();
+      if (themeData) body.theme = themeData;
       if (contentType === "html") {
         body.html_content = document.getElementById("f_html").value;
       } else {
