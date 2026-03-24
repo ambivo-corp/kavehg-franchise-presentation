@@ -66,7 +66,7 @@ async def edit_page(request: Request, presentation_id: str):
 
 
 @router.post("/api/auth/login")
-async def login_api(data: LoginRequest) -> Dict[str, Any]:
+async def login_api(request: Request, data: LoginRequest) -> Dict[str, Any]:
     """Proxy login to ambivo_api /user/login, return token."""
     try:
         payload = {
@@ -77,11 +77,20 @@ async def login_api(data: LoginRequest) -> Dict[str, Any]:
         if data.device_id:
             payload["device_id"] = data.device_id
 
+        # Forward client IP and User-Agent so Core API sees the real client, not the proxy
+        client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if not client_ip:
+            client_ip = request.client.host if request.client else ""
+
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
                 f"{settings.ambivo_api_url}/user/login",
                 json=payload,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Forwarded-For": client_ip,
+                    "User-Agent": request.headers.get("user-agent", ""),
+                },
             )
             result = resp.json()
     except Exception as e:
