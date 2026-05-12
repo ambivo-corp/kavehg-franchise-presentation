@@ -9,6 +9,7 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     File,
+    Form,
     HTTPException,
     Query,
     Request,
@@ -28,7 +29,12 @@ from app.models.presentation import (
     PresentationResponse,
     PresentationUpdate,
 )
-from app.services import chapter_service, presentation_service
+from app.services import chapter_service, document_converter, presentation_service
+from app.services.document_converter import (
+    ConversionError,
+    FileTooLargeError,
+    UnsupportedFormatError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -382,6 +388,74 @@ async def reorder_chapters(
             "Failed to reorder chapters on presentation %s", presentation_id
         )
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post(
+    "/{presentation_id}/chapters/upload",
+    response_model=ChapterDetail,
+    status_code=201,
+)
+async def upload_chapter(
+    presentation_id: str,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    title: str | None = Form(None),
+    slug: str | None = Form(None),
+    section: str | None = Form(None),
+    order: int | None = Form(None),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Create a chapter from an uploaded .md/.txt/.html/.pdf/.docx/.pptx file.
+
+    The file is converted to markdown server-side via markitdown.
+    If `title` is omitted, it's derived from the first H1 in the
+    converted markdown or the filename stem.
+    """
+    try:
+        file_bytes = await file.read()
+    except Exception:
+        logger.exception("Failed to read upload for presentation %s", presentation_id)
+        raise HTTPException(status_code=400, detail="Could not read uploaded file")
+
+    try:
+        converted = await document_converter.convert_file(
+            file_bytes, file.filename or ""
+        )
+    except FileTooLargeError as e:
+        raise HTTPException(status_code=413, detail=str(e))
+    except UnsupportedFormatError as e:
+        raise HTTPException(status_code=415, detail=str(e))
+    except ConversionError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    chapter_data = ChapterCreate(
+        title=(title or converted.suggested_title).strip(),
+        slug=slug,
+        section=section,
+        order=order,
+        content_type="markdown",
+        markdown_content=converted.markdown,
+    )
+
+    try:
+        result = await chapter_service.add_chapter(
+            presentation_id, user["tenant_id"], chapter_data
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=_chapter_value_status(str(e)), detail=str(e))
+    except Exception:
+        logger.exception(
+            "Failed to add uploaded chapter to presentation %s", presentation_id
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    background_tasks.add_task(
+        chapter_service.reindex_presentation,
+        presentation_id,
+        user["tenant_id"],
+        user["userid"],
+    )
+    return result
 
 
 @router.post(
