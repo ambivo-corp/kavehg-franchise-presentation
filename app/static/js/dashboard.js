@@ -631,6 +631,67 @@
       }
     });
 
+    // ── Bulk-upload zone (drop files = create as multi-chapter book)
+    var createSelectedFiles = []; // FileList-like array
+    var createUploadZone = document.getElementById("createUploadZone");
+    var createFileInput = document.getElementById("createFileInput");
+    var createPickBtn = document.getElementById("btnCreatePick");
+    var createUploadPreview = document.getElementById("createUploadPreview");
+
+    function renderCreateUploadPreview() {
+      if (!createUploadPreview) return;
+      if (!createSelectedFiles.length) {
+        createUploadPreview.style.display = "none";
+        createUploadPreview.textContent = "";
+        return;
+      }
+      var names = createSelectedFiles.map(function (f) { return f.name; });
+      createUploadPreview.style.display = "block";
+      createUploadPreview.innerHTML =
+        "<strong>" + createSelectedFiles.length + " file" +
+        (createSelectedFiles.length === 1 ? "" : "s") + " selected:</strong> " +
+        names.join(", ") +
+        ' <a href="#" id="createUploadClear" style="margin-left:.5rem;color:#b91c1c">clear</a>';
+      document.getElementById("createUploadClear").addEventListener("click", function (ev) {
+        ev.preventDefault();
+        createSelectedFiles = [];
+        if (createFileInput) createFileInput.value = "";
+        renderCreateUploadPreview();
+      });
+    }
+
+    if (createPickBtn) {
+      createPickBtn.addEventListener("click", function () {
+        if (createFileInput) createFileInput.click();
+      });
+    }
+    if (createFileInput) {
+      createFileInput.addEventListener("change", function () {
+        createSelectedFiles = Array.prototype.slice.call(createFileInput.files || []);
+        renderCreateUploadPreview();
+      });
+    }
+    if (createUploadZone) {
+      ["dragenter", "dragover"].forEach(function (evt) {
+        createUploadZone.addEventListener(evt, function (e) {
+          e.preventDefault(); e.stopPropagation();
+          createUploadZone.classList.add("is-dragover");
+        });
+      });
+      ["dragleave", "drop"].forEach(function (evt) {
+        createUploadZone.addEventListener(evt, function (e) {
+          e.preventDefault(); e.stopPropagation();
+          createUploadZone.classList.remove("is-dragover");
+        });
+      });
+      createUploadZone.addEventListener("drop", function (e) {
+        if (e.dataTransfer && e.dataTransfer.files) {
+          createSelectedFiles = Array.prototype.slice.call(e.dataTransfer.files);
+          renderCreateUploadPreview();
+        }
+      });
+    }
+
     createForm.addEventListener("submit", function (e) {
       e.preventDefault();
       var errEl = document.getElementById("formError");
@@ -640,15 +701,16 @@
       btn.textContent = "Creating\u2026";
 
       var contentType = document.getElementById("f_content_type").value;
+      var hasFiles = createSelectedFiles && createSelectedFiles.length > 0;
 
-      // Validate content is not empty
+      // Validate content is not empty — unless files will populate chapters
       var contentVal = contentType === "html"
         ? document.getElementById("f_html").value
         : document.getElementById("f_md").value;
-      if (!contentVal || !contentVal.trim()) {
+      if (!hasFiles && (!contentVal || !contentVal.trim())) {
         errEl.textContent = contentType === "html"
-          ? "HTML content cannot be empty."
-          : "Markdown content cannot be empty.";
+          ? "HTML content cannot be empty (or upload files instead)."
+          : "Markdown content cannot be empty (or upload files instead).";
         errEl.classList.add("show");
         btn.disabled = false;
         btn.textContent = "Create Presentation";
@@ -667,9 +729,13 @@
       var themeData = getThemeFields();
       if (themeData) body.theme = themeData;
       if (contentType === "html") {
-        body.html_content = document.getElementById("f_html").value;
+        body.html_content = hasFiles && !contentVal.trim()
+          ? "<p>Uploading chapters…</p>"
+          : document.getElementById("f_html").value;
       } else {
-        body.markdown_content = document.getElementById("f_md").value;
+        body.markdown_content = hasFiles && !contentVal.trim()
+          ? "# Uploading chapters…\n\nChapter content will appear here after upload completes."
+          : document.getElementById("f_md").value;
       }
       if (body.access_protected) {
         body.num_access_codes = parseInt(document.getElementById("f_num_codes").value, 10) || 3;
@@ -678,6 +744,28 @@
       if (slug) body.slug = slug;
 
       var logoInput = document.getElementById("f_logo");
+
+      function uploadChapters(presentationId) {
+        if (!hasFiles) return Promise.resolve(null);
+        btn.textContent = "Uploading chapters…";
+        var fd = new FormData();
+        for (var i = 0; i < createSelectedFiles.length; i += 1) {
+          fd.append("files", createSelectedFiles[i]);
+        }
+        var headers = authHeaders();
+        delete headers["Content-Type"]; // let browser set multipart boundary
+        return fetch(
+          API + "/api/presentations/" + presentationId + "/chapters/bulk-import",
+          { method: "POST", headers: headers, body: fd }
+        ).then(function (r) {
+          if (!r.ok) {
+            return parseErrorResponse(r, "Bulk import failed").then(function (msg) {
+              throw new Error(msg);
+            });
+          }
+          return r.json();
+        });
+      }
 
       fetch(API + "/api/presentations", {
         method: "POST",
@@ -691,15 +779,27 @@
         })
         .then(function (result) {
           if (result.access_protected && result.access_codes && result.access_codes.length) {
-            alert("Access codes generated:\\n\\n" + result.access_codes.join("\\n") + "\\n\\nSave these codes — they are shown on the edit page too.");
+            alert("Access codes generated:\n\n" + result.access_codes.join("\n") + "\n\nSave these codes — they are shown on the edit page too.");
           }
-          // Upload logo if selected
+          var followups = Promise.resolve();
           if (logoInput && logoInput.files && logoInput.files[0]) {
-            return uploadLogo(result.id, logoInput).then(function () {
-              window.location.href = "/dashboard";
-            });
+            followups = followups.then(function () { return uploadLogo(result.id, logoInput); });
           }
-          window.location.href = "/dashboard";
+          followups = followups.then(function () { return uploadChapters(result.id); });
+          return followups.then(function (bulk) {
+            if (hasFiles && bulk) {
+              var msg = "Created " + (bulk.created || []).length +
+                " chapter(s), updated " + (bulk.updated || []).length +
+                (bulk.failed && bulk.failed.length
+                  ? ", " + bulk.failed.length + " failed"
+                  : "");
+              try { console.log("Bulk import:", bulk); } catch (_) {}
+              // Land on the edit page so author can review chapters
+              window.location.href = "/dashboard/edit/" + result.id;
+              return;
+            }
+            window.location.href = "/dashboard";
+          });
         })
         .catch(function (err) {
           errEl.textContent = err.message;

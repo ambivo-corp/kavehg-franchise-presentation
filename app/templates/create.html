@@ -174,6 +174,28 @@
           </div>
         </div>
 
+        <label>Content</label>
+        <p class="form-hint" style="margin-top:.1rem">
+          Either paste content below as Markdown / HTML, <em>or</em> drop one
+          or more files to create a multi-chapter book.
+        </p>
+
+        <div id="createUploadZone" class="chapters-upload-zone" style="margin:.5rem 0 1rem">
+          <input type="file" id="createFileInput" multiple
+            accept=".md,.markdown,.txt,.html,.htm,.pdf,.docx,.pptx,.xlsx"
+            style="display:none">
+          <p>
+            <button type="button" class="btn-sm btn-primary" id="btnCreatePick">
+              Upload files
+            </button>
+            <span class="form-hint">
+              or drop .md / .pdf / .docx / .pptx files here
+              (each file becomes a chapter)
+            </span>
+          </p>
+          <div id="createUploadPreview" style="display:none;margin-top:.5rem;font-size:.82rem;color:#374151"></div>
+        </div>
+
         <label>Content Type</label>
         <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem">
           <div class="content-type-toggle">
