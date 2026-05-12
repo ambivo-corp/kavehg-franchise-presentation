@@ -245,7 +245,18 @@ async def create(
         logger.exception(f"KB creation/indexing failed for {kb_name}")
         raise
 
-    access_codes = _generate_access_codes(data.num_access_codes) if data.access_protected else []
+    # Resolve initial access mode. Explicit access_mode wins; legacy
+    # access_protected boolean is honored when access_mode is omitted.
+    if data.access_mode is not None:
+        access_mode = data.access_mode
+    elif data.access_protected:
+        access_mode = "access_code"
+    else:
+        access_mode = "public"
+    access_protected = access_mode == "access_code"
+    access_codes = (
+        _generate_access_codes(data.num_access_codes) if access_protected else []
+    )
 
     now = datetime.now(timezone.utc)
     doc = {
@@ -259,7 +270,8 @@ async def create(
         "kb_name": kb_name,
         "is_published": True,
         "chat_enabled": data.chat_enabled,
-        "access_protected": data.access_protected,
+        "access_protected": access_protected,
+        "access_mode": access_mode,
         "access_codes": access_codes,
         "description": data.description,
         "tags": data.tags,

@@ -212,7 +212,13 @@
     uploadStatus.textContent = text;
   }
 
+  let _uploading = false;
+
   async function uploadFiles(files) {
+    if (_uploading) {
+      setUploadStatus("Already uploading — wait for the current batch to finish.", "warn");
+      return;
+    }
     if (!files || !files.length) return;
 
     // Filter to supported extensions (folder pickers grab everything)
@@ -238,6 +244,9 @@
       ? " (" + skipped + " unsupported file" + (skipped === 1 ? "" : "s") + " skipped)"
       : "";
     setUploadStatus("Uploading " + filtered.length + " file(s)" + skipNote + "…", "info");
+    _uploading = true;
+    if (pickBtn) pickBtn.disabled = true;
+    if (pickFolderBtn) pickFolderBtn.disabled = true;
     try {
       const headers = authHeaders();
       delete headers["Content-Type"]; // browser sets boundary
@@ -277,6 +286,10 @@
       section.style.display = "block";
     } catch (err) {
       setUploadStatus("Upload failed: " + err.message, "error");
+    } finally {
+      _uploading = false;
+      if (pickBtn) pickBtn.disabled = false;
+      if (pickFolderBtn) pickFolderBtn.disabled = false;
     }
   }
 
@@ -364,7 +377,9 @@
     const targetId = row.getAttribute("data-id");
     if (!targetId || targetId === dragId) return;
 
-    // Build new order: move dragId before targetId
+    // Build new order: move dragId immediately before targetId.
+    // When dragging forward (fromIdx < toIdx), removing from fromIdx
+    // shifts toIdx left by one — adjust before reinserting.
     const ids = Array.from(list.querySelectorAll(".chapter-row")).map(
       function (r) { return r.getAttribute("data-id"); }
     );
@@ -372,7 +387,8 @@
     const toIdx = ids.indexOf(targetId);
     if (fromIdx < 0 || toIdx < 0) return;
     ids.splice(fromIdx, 1);
-    ids.splice(toIdx, 0, dragId);
+    const insertAt = fromIdx < toIdx ? toIdx - 1 : toIdx;
+    ids.splice(insertAt, 0, dragId);
 
     try {
       const updated = await apiFetch(

@@ -749,9 +749,11 @@
       var hasFiles = createSelectedFiles && createSelectedFiles.length > 0;
 
       // Validate content is not empty — unless files will populate chapters
+      var htmlEl = document.getElementById("f_html");
+      var mdEl = document.getElementById("f_md");
       var contentVal = contentType === "html"
-        ? document.getElementById("f_html").value
-        : document.getElementById("f_md").value;
+        ? (htmlEl ? htmlEl.value : "")
+        : (mdEl ? mdEl.value : "");
       if (!hasFiles && (!contentVal || !contentVal.trim())) {
         errEl.textContent = contentType === "html"
           ? "HTML content cannot be empty (or upload files instead)."
@@ -776,11 +778,11 @@
       if (contentType === "html") {
         body.html_content = hasFiles && !contentVal.trim()
           ? "<p>Uploading chapters…</p>"
-          : document.getElementById("f_html").value;
+          : (htmlEl ? htmlEl.value : "");
       } else {
         body.markdown_content = hasFiles && !contentVal.trim()
           ? "# Uploading chapters…\n\nChapter content will appear here after upload completes."
-          : document.getElementById("f_md").value;
+          : (mdEl ? mdEl.value : "");
       }
       if (body.access_protected) {
         body.num_access_codes = parseInt(document.getElementById("f_num_codes").value, 10) || 3;

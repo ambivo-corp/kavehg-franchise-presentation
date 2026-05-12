@@ -392,15 +392,19 @@ async def bulk_import_chapters(
     """Convert files to markdown and create or update chapters.
 
     Chapters are matched against existing ones by slug derived from the
-    filename stem:
-      - existing slug match → update content + title (keeps chapter_id,
-        slug, order, section)
+    full relative path stem (so "section1/intro.md" and
+    "section2/intro.md" don't collide):
+      - existing slug match → update content + title and refresh
+        content_hash. chapter_id, slug, and order are preserved.
+        Section is preserved if the chapter already has one; otherwise
+        the section derived from the upload path (if any) is set.
       - no match → append in natural-sort filename order after the
-        current last chapter
+        current last chapter. Section is set from the first real
+        subfolder name when the path has 3+ parts.
 
-    Files are converted in input order but persisted after natural-sort
-    ordering by filename so e.g. UG-001 lands before UG-002 regardless
-    of upload order.
+    Files are converted in input order but persisted in natural-sort
+    filename order, so e.g. UG-001 lands before UG-002 regardless of
+    upload order.
 
     Returns a summary {created: [...], updated: [...], failed: [...]}.
     The reindex is NOT triggered here — the calling route should

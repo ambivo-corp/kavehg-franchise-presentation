@@ -189,6 +189,15 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
                             logger.warning(
                                 "Failed to serialize sources for kb=%s", kb_name
                             )
+                    else:
+                        # Useful for diagnosing missing citations on an
+                        # otherwise-successful answer.
+                        logger.debug(
+                            "stream_complete with no usable sources for kb=%s "
+                            "(answer_dict_list present=%s)",
+                            kb_name,
+                            bool(evt.get("answer_dict_list")),
+                        )
                     yield {"event": "done", "data": ""}
                     return
 
