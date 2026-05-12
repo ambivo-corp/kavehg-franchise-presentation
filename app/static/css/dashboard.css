@@ -5,6 +5,8 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background: #f3f4f6;
   color: #1f2937;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 /* ── Nav ── */
@@ -49,9 +51,10 @@ nav .user-area span { color: #6b7280; }
   background: #fff;
   border-radius: 10px;
   box-shadow: 0 1px 6px rgba(0,0,0,.06);
-  overflow: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
-table { width: 100%; border-collapse: collapse; }
+table { width: 100%; border-collapse: collapse; min-width: 640px; }
 th, td { padding: .65rem 1rem; text-align: left; font-size: .9rem; }
 th { background: #f9fafb; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb; }
 td { border-bottom: 1px solid #f3f4f6; }
@@ -365,9 +368,10 @@ tr:last-child td { border-bottom: none; }
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0,0,0,.2);
-  width: 90%;
+  width: 100%;
   max-width: 720px;
   max-height: 85vh;
+  max-height: 85dvh;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -721,4 +725,174 @@ body.has-sticky-save .container {
   margin: 0;
   font-size: .78rem;
   color: #6b7280;
+}
+
+/* ──────────────────────────────────────────────────────────────
+ * Responsive — creator/dashboard pages
+ *
+ * Three breakpoints:
+ *   ≤768px  tablet/landscape phone
+ *   ≤480px  phone
+ *   ≤360px  tiny phone / foldable in folded mode
+ *
+ * The 16px font-size on form controls at phone widths is deliberate:
+ * iOS Safari zooms the viewport when focusing inputs smaller than 16px.
+ * Browser-level pinch-zoom remains enabled (no user-scalable=no) so
+ * users can still zoom for legibility.
+ * ────────────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  nav { padding: .65rem 1rem; }
+  nav .brand { font-size: 1rem; }
+  .container { margin: 1.25rem auto; padding: 0 .9rem; }
+  .form-card { padding: 1.25rem 1.1rem; }
+  .form-card h2 { font-size: 1.2rem; }
+  .header-row { gap: .75rem; }
+
+  /* Theme color pickers: 3 → 2 columns */
+  #themeSection .header-fields > div[style*="grid-template-columns:1fr 1fr 1fr"],
+  #themeSection .header-fields > div[style*="grid-template-columns: 1fr 1fr 1fr"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* AI modal: let the iframe/textarea breathe but cap height */
+  #aiPreviewFrame, #aiPreviewCode { min-height: 280px; }
+}
+
+@media (max-width: 480px) {
+  body { font-size: 15px; }
+
+  /* Nav stacks: brand on top, user-area below */
+  nav {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .5rem;
+    padding: .6rem .85rem;
+  }
+  nav .user-area {
+    justify-content: space-between;
+    gap: .5rem;
+  }
+  nav .user-area span {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .container { margin: 1rem auto; padding: 0 .75rem; }
+  .form-card { padding: 1rem .85rem; border-radius: 10px; }
+  .form-card h2 { font-size: 1.1rem; margin-bottom: 1rem; }
+
+  /* Header row: title above, "+ New" button below full-width */
+  .header-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .65rem;
+  }
+  .header-row > * { width: 100%; }
+  .header-row .btn-sm { text-align: center; padding: .55rem .75rem; font-size: .9rem; }
+
+  /* 16px on form controls — prevents iOS zoom-on-focus, still respects browser zoom */
+  .form-card input[type="text"],
+  .form-card input[type="email"],
+  .form-card input[type="password"],
+  .form-card input[type="url"],
+  .form-card input[type="number"],
+  .form-card textarea,
+  .form-card select,
+  .tags-input input,
+  #newCodeInput,
+  #chapterTitleInput,
+  #chapterSectionInput {
+    font-size: 16px;
+  }
+  .form-card textarea.md-editor,
+  #chapterMarkdownInput,
+  #aiPrompt,
+  #aiPreviewCode {
+    font-size: 16px;  /* 16px avoids iOS focus zoom even for code editors */
+    min-height: 240px;
+  }
+
+  /* Stats bar: wrap and tighten */
+  .stats-bar {
+    flex-wrap: wrap;
+    gap: .85rem 1rem;
+    padding: .65rem .75rem;
+  }
+  .stat-item { min-width: 0; flex: 1 1 auto; }
+  .stat-value { font-size: 1.2rem; }
+
+  /* Modal: full-bleed on phones, dvh-bound */
+  .modal-overlay { padding: .5rem; }
+  .modal-panel {
+    max-height: 92dvh;
+    border-radius: 10px;
+  }
+  .modal-header { padding: .65rem .85rem; }
+  .modal-header h3 { font-size: 1rem; }
+  .modal-body { padding: .85rem; }
+  .modal-footer { padding: .65rem .85rem; flex-wrap: wrap; gap: .5rem; }
+
+  /* Theme colors: 2 → 1 column at very narrow */
+  #themeSection .header-fields > div[style*="grid-template-columns:repeat(3"],
+  #themeSection .header-fields > div[style*="grid-template-columns: repeat(3"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  #themeSection .header-fields > div[style*="grid-template-columns:1fr 1fr 1fr"],
+  #themeSection .header-fields > div[style*="grid-template-columns: 1fr 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Content type + AI generate row wraps */
+  #btnAiGenerate { white-space: normal; }
+
+  /* Chapter rows stack: title and meta below drag handle */
+  .chapter-row {
+    flex-wrap: wrap;
+    padding: .5rem .6rem;
+  }
+  .chapter-main { gap: .35rem; }
+  .chapter-slug, .chapter-indexed { font-size: .72rem; }
+
+  /* Sticky save bar tightens; "Cancel" hides to save space */
+  .sticky-save-bar { padding: .55rem .75rem; }
+  .sticky-save-bar-inner { gap: .5rem; }
+  .sticky-save-status { font-size: .8rem; }
+  body.has-sticky-save .container { padding-bottom: 5.5rem; }
+
+  /* Query table inside modal: hide low-priority columns, allow x-scroll */
+  .query-table { font-size: .8rem; }
+  .query-table .q-meta { font-size: .7rem; }
+  .query-table .q-text { max-width: 180px; }
+
+  /* Content-type / preview button rows wrap */
+  .content-type-toggle,
+  .preview-toggle {
+    flex-wrap: wrap;
+  }
+
+  /* Help box / header-fields tighten */
+  .help-box { padding: .85rem 1rem; }
+  .header-fields { padding: .85rem; }
+}
+
+@media (max-width: 360px) {
+  .container { padding: 0 .6rem; }
+  .form-card { padding: .85rem .7rem; }
+  .modal-overlay { padding: .25rem; }
+  .modal-panel { border-radius: 8px; }
+
+  /* Theme presets: 3 → 2 columns when grid would otherwise be cramped */
+  #themeSection .header-fields > div[style*="grid-template-columns:repeat(3"],
+  #themeSection .header-fields > div[style*="grid-template-columns: repeat(3"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+/* Landscape phones (short viewport): keep modal usable */
+@media (max-height: 480px) and (orientation: landscape) {
+  .modal-panel { max-height: 95dvh; }
+  .modal-body { padding: .65rem .85rem; }
 }
