@@ -158,6 +158,19 @@
                   continue;
                 }
 
+                if (currentEvent === "sources") {
+                  try {
+                    var sources = JSON.parse(data);
+                    if (Array.isArray(sources) && sources.length) {
+                      renderSources(assistantEl, sources);
+                    }
+                  } catch (parseErr) {
+                    // Non-JSON sources payload — ignore silently
+                  }
+                  currentEvent = "";
+                  continue;
+                }
+
                 // chunk or start — append text (preserving spaces)
                 fullText += data;
                 assistantEl.innerHTML = renderInlineMd(fullText);
@@ -195,6 +208,70 @@
 
   function scrollBottom() {
     messages.scrollTop = messages.scrollHeight;
+  }
+
+  // ── Citation chips ─────────────────────────────────────────────
+  // Cache chapter mapping (title → slug) read from #bookChaptersData
+  // if we're on a book reader page. null when not in book mode.
+  var _chapterMap = (function () {
+    try {
+      var node = document.getElementById("bookChaptersData");
+      if (!node || !node.textContent) return null;
+      var arr = JSON.parse(node.textContent);
+      if (!Array.isArray(arr)) return null;
+      var map = {};
+      for (var i = 0; i < arr.length; i += 1) {
+        var ch = arr[i];
+        if (ch && ch.title && ch.slug) {
+          map[ch.title.toLowerCase()] = ch.slug;
+        }
+      }
+      return map;
+    } catch (_) {
+      return null;
+    }
+  })();
+  var _bookSlug = (function () {
+    var match = window.location.pathname.match(/^\/p\/([^/]+)/);
+    return match ? match[1] : null;
+  })();
+
+  function renderSources(assistantEl, sources) {
+    var existing = assistantEl.nextElementSibling;
+    if (existing && existing.classList.contains("chat-sources")) {
+      existing.remove();
+    }
+    var box = document.createElement("div");
+    box.className = "chat-sources";
+    var label = document.createElement("span");
+    label.className = "chat-sources-label";
+    label.textContent = "Sources";
+    box.appendChild(label);
+
+    for (var i = 0; i < sources.length; i += 1) {
+      var src = sources[i];
+      var name = (src && src.display_file_name) || "";
+      if (!name) continue;
+      var excerpt = (src && src.excerpt) || "";
+      var chapterSlug = _chapterMap ? _chapterMap[name.toLowerCase()] : null;
+
+      var chip;
+      if (chapterSlug && _bookSlug) {
+        chip = document.createElement("a");
+        chip.href = "/p/" + encodeURIComponent(_bookSlug) +
+                    "/c/" + encodeURIComponent(chapterSlug);
+      } else {
+        chip = document.createElement("span");
+      }
+      chip.className = "chat-source-chip";
+      chip.textContent = name;
+      if (excerpt) chip.title = excerpt;
+      box.appendChild(chip);
+    }
+
+    // Insert after the assistant message bubble
+    assistantEl.parentNode.insertBefore(box, assistantEl.nextSibling);
+    scrollBottom();
   }
 
   function el(tag, attrs) {

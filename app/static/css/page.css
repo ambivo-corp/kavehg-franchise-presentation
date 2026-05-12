@@ -272,6 +272,44 @@ body {
 }
 .chat-msg.assistant code { background: var(--bg-code); padding: .1rem .25rem; border-radius: 3px; font-size: .85em; }
 
+.chat-sources {
+  align-self: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  align-items: center;
+  margin: -.3rem 0 .25rem;
+  padding: 0 .25rem;
+  max-width: 95%;
+}
+.chat-sources-label {
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-light);
+  margin-right: .15rem;
+}
+.chat-source-chip {
+  display: inline-block;
+  padding: .15rem .55rem;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  color: var(--text);
+  font-size: .72rem;
+  line-height: 1.4;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+a.chat-source-chip:hover {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
 .chat-typing {
   align-self: flex-start;
   padding: .5rem .75rem;

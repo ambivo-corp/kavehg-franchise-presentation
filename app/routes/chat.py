@@ -156,6 +156,39 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
                     yield {"event": "start", "data": ""}
 
                 elif evt_type == "stream_complete":
+                    # VectorDB packs source metadata under
+                    # answer_dict_list[i].source_list[]. Each entry is
+                    # {display_file_name, source_text, score, page, ...}.
+                    # We dedupe by display_file_name (multiple chunks
+                    # from one chapter collapse to one citation), keep
+                    # the highest score, and forward a sources event.
+                    sources_by_name: dict = {}
+                    for ad in evt.get("answer_dict_list") or []:
+                        for src in (ad or {}).get("source_list") or []:
+                            name = (src.get("display_file_name") or "").strip()
+                            if not name:
+                                continue
+                            score = src.get("score") or 0
+                            excerpt = (src.get("source_text") or "").strip()
+                            existing = sources_by_name.get(name)
+                            if existing is None or score > existing.get("score", 0):
+                                sources_by_name[name] = {
+                                    "display_file_name": name,
+                                    "score": score,
+                                    "excerpt": excerpt[:200],
+                                }
+                    if sources_by_name:
+                        ordered = sorted(
+                            sources_by_name.values(),
+                            key=lambda s: s.get("score", 0),
+                            reverse=True,
+                        )
+                        try:
+                            yield {"event": "sources", "data": json.dumps(ordered)}
+                        except (TypeError, ValueError):
+                            logger.warning(
+                                "Failed to serialize sources for kb=%s", kb_name
+                            )
                     yield {"event": "done", "data": ""}
                     return
 
