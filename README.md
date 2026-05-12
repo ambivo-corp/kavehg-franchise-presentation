@@ -468,6 +468,32 @@ docker build -t ambivo-content-portal .
 docker run -p 8003:8003 --env-file .env ambivo-content-portal
 ```
 
+## Scaling notes
+
+The book-mode KB re-indexing pipeline is **single-process by design** and
+must run on a single Railway replica until it is migrated to an external
+job queue.
+
+Two pieces of state currently live in the request process:
+
+- `app/services/chapter_service.py` keeps a module-level
+  `_kb_locks: dict[str, asyncio.Lock]` to serialize concurrent reindexes
+  of the same KB. With multiple replicas, two workers can race the same
+  collection (truncate → partial reindex → second truncate → missing
+  chapters).
+- Chapter add / update / delete / bulk-import schedule the reindex via
+  FastAPI `BackgroundTasks`, which runs **inside the request process
+  after the response is sent**. A worker restart between response and
+  reindex completion silently drops the job.
+
+**Before scaling to >1 replica:** move `reindex_presentation` onto a
+proper queue (Celery, RQ, or arq with a Redis broker) so locks become
+distributed and jobs survive worker restarts. The function is already
+idempotent — pulling it into a worker is a localized change.
+
+For a single-replica deploy on Railway with low write volume (chapter
+edits are admin-only), the current implementation is sufficient.
+
 ## Tech Stack
 
 | Component | Technology |
