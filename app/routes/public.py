@@ -1,14 +1,18 @@
 """
-Public page serving — no auth required
+Public page serving — supports three access modes:
+  - "public"          → no gate
+  - "access_code"     → cookie-based code (legacy access_protected=true)
+  - "ambivo_session"  → JWT bearer in Authorization header OR ?token= query
 """
 import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from app.auth.jwt_auth import jwt_auth
 from app.db import get_db
 from app.services import presentation_service
 from app.services.md_renderer import render_markdown
@@ -64,11 +68,46 @@ async def _track_view(doc: dict, request: Request, slug: str) -> None:
         logger.warning("Failed to track page view for slug=%s: %s", slug, exc)
 
 
-def _is_access_blocked(doc: dict, request: Request, slug: str) -> bool:
-    if not (doc.get("access_protected") and doc.get("access_codes")):
+def _resolve_access_mode(doc: dict) -> str:
+    """Return the effective access mode, honoring legacy access_protected."""
+    mode = doc.get("access_mode")
+    if mode:
+        return mode
+    if doc.get("access_protected") and doc.get("access_codes"):
+        return "access_code"
+    return "public"
+
+
+def _is_access_code_blocked(doc: dict, request: Request, slug: str) -> bool:
+    if not doc.get("access_codes"):
         return False
     verified_code = request.cookies.get(f"cp_access_{slug}")
     return not verified_code or verified_code not in doc["access_codes"]
+
+
+def _verify_ambivo_session(request: Request) -> dict | None:
+    """Decode a bearer token from Authorization header or ?token= query.
+
+    Returns the user dict on success, None on absence/failure. Never
+    raises — callers translate None into a 401 response.
+    """
+    token: str | None = None
+    auth = request.headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        token = auth[7:].strip() or None
+    if not token:
+        token = request.query_params.get("token")
+    if not token:
+        return None
+    try:
+        return jwt_auth.decode_token(token)
+    except HTTPException as exc:
+        logger.info(
+            "ambivo_session token rejected for path=%s: %s",
+            request.url.path,
+            exc.detail,
+        )
+        return None
 
 
 def _normalize_book_chapters(doc: dict) -> list[dict]:
@@ -160,12 +199,31 @@ async def _serve_presentation(
     if not doc or not doc.get("is_published", True):
         raise HTTPException(status_code=404, detail="Page not found")
 
-    if _is_access_blocked(doc, request, slug):
-        return templates.TemplateResponse(
-            request,
-            "access_code.html",
-            {"title": doc["title"], "slug": slug},
-        )
+    mode = _resolve_access_mode(doc)
+
+    if mode == "ambivo_session":
+        user = _verify_ambivo_session(request)
+        if not user:
+            # Differentiate browser vs API caller: a JSON Accept header
+            # gets 401 JSON (iframe / fetch); HTML caller gets a friendly
+            # 401 page so embedding errors are obvious.
+            accept = (request.headers.get("accept") or "").lower()
+            if "application/json" in accept and "text/html" not in accept:
+                return JSONResponse(
+                    {"detail": "Authentication required"},
+                    status_code=401,
+                )
+            raise HTTPException(
+                status_code=401,
+                detail="This page requires an Ambivo session.",
+            )
+    elif mode == "access_code":
+        if _is_access_code_blocked(doc, request, slug):
+            return templates.TemplateResponse(
+                request,
+                "access_code.html",
+                {"title": doc["title"], "slug": slug},
+            )
 
     await _track_view(doc, request, slug)
 

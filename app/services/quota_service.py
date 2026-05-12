@@ -83,6 +83,8 @@ async def record_chat_query(
     question: str,
     client_ip: str,
     access_code: str | None = None,
+    ambivo_user_id: str | None = None,
+    ambivo_email: str | None = None,
 ) -> None:
     """Insert a chat-query tracking document."""
     now = datetime.now(timezone.utc)
@@ -98,5 +100,9 @@ async def record_chat_query(
     }
     if access_code:
         doc["access_code"] = access_code
+    if ambivo_user_id:
+        doc["ambivo_user_id"] = ambivo_user_id
+    if ambivo_email:
+        doc["ambivo_email"] = ambivo_email
     coll = get_db()["content_chat_queries"]
     await coll.insert_one(doc)

@@ -1,6 +1,11 @@
 """
 Chat SSE proxy — streams answers from vectordb for a presentation's KB
 Parses VectorDB JSON events and emits clean SSE to the browser.
+
+Access modes mirror /p/{slug}:
+  - public / access_code → no chat-time auth gate (page-level check enforces)
+  - ambivo_session       → require a valid bearer token; attribute query
+                           to the authenticated Ambivo user
 """
 import json
 import time
@@ -11,6 +16,7 @@ from collections import defaultdict
 from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
+from app.auth.jwt_auth import jwt_auth
 from app.config import settings
 from app.db import get_db
 from app.models.presentation import ChatRequest
@@ -35,6 +41,29 @@ def _check_rate(ip: str):
     _rate[ip].append(now)
 
 
+def _chat_access_mode(doc: dict) -> str:
+    mode = doc.get("access_mode")
+    if mode:
+        return mode
+    if doc.get("access_protected") and doc.get("access_codes"):
+        return "access_code"
+    return "public"
+
+
+def _verify_chat_bearer(request: Request) -> dict | None:
+    auth = request.headers.get("authorization") or ""
+    if not auth.lower().startswith("bearer "):
+        return None
+    token = auth[7:].strip()
+    if not token:
+        return None
+    try:
+        return jwt_auth.decode_token(token)
+    except HTTPException as exc:
+        logger.info("Chat bearer rejected: %s", exc.detail)
+        return None
+
+
 @router.post("/{presentation_id}")
 async def chat(presentation_id: str, body: ChatRequest, request: Request):
     client_ip = request.client.host if request.client else "unknown"
@@ -48,6 +77,17 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
         raise HTTPException(status_code=404, detail="Presentation not found")
     if not doc.get("chat_enabled", True):
         raise HTTPException(status_code=403, detail="Chat is disabled for this page")
+
+    # Enforce ambivo_session at the chat boundary so a leaked
+    # presentation_id can't be queried without a valid token.
+    ambivo_user: dict | None = None
+    if _chat_access_mode(doc) == "ambivo_session":
+        ambivo_user = _verify_chat_bearer(request)
+        if not ambivo_user:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required for this chat.",
+            )
 
     kb_name = doc["kb_name"]
     tenant_id = doc["tenant_id"]
@@ -78,6 +118,8 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
             await record_chat_query(
                 presentation_id, tenant_id, kb_name, session_id, body.message, client_ip,
                 access_code=access_code,
+                ambivo_user_id=(ambivo_user or {}).get("userid"),
+                ambivo_email=(ambivo_user or {}).get("email"),
             )
         except Exception as rec_exc:
             logger.warning("Failed to record chat query: %s", rec_exc)

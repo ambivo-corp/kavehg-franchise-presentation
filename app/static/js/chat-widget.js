@@ -89,9 +89,15 @@
     var url = apiBase + "/api/chat/" + presentationId;
     var body = JSON.stringify({ message: question, session_id: sessionId });
 
+    var headers = { "Content-Type": "application/json" };
+    try {
+      var token = localStorage.getItem("cp_token");
+      if (token) headers["Authorization"] = "Bearer " + token;
+    } catch (_) { /* localStorage may throw in private mode */ }
+
     fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: headers,
       body: body,
     })
       .then(function (resp) {
