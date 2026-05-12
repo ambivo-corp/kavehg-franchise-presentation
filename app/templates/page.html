@@ -68,11 +68,20 @@
   {% endif %}
 
   {% if content_type == "html" %}
+  {# Inject a viewport meta + responsive media defaults so user-uploaded HTML
+     that wasn't authored for mobile still scales correctly inside the iframe.
+     The trailing resize script reports document height to the parent. #}
+  {% set responsive_head = '<meta name="viewport" content="width=device-width, initial-scale=1.0"><style>html,body{max-width:100%;overflow-x:auto;-webkit-text-size-adjust:100%}img,video,iframe,embed,object,canvas,svg{max-width:100%;height:auto}table{max-width:100%;display:block;overflow-x:auto}pre{max-width:100%;overflow-x:auto}</style>' %}
   {% set resize_script = '<script>var _cpT;function _cpR(){clearTimeout(_cpT);_cpT=setTimeout(function(){window.parent.postMessage({cpFrameHeight:document.documentElement.scrollHeight},"*")},50)}window.addEventListener("load",_cpR);window.addEventListener("resize",_cpR);new MutationObserver(_cpR).observe(document.body||document.documentElement,{childList:!0,subtree:!0,attributes:!0})</script>' %}
-  {% if '</body>' in html_content %}
-  {% set framed_html = html_content.replace('</body>', resize_script + '</body>') %}
+  {% if '</head>' in html_content %}
+  {% set framed_html = html_content.replace('</head>', responsive_head + '</head>') %}
   {% else %}
-  {% set framed_html = html_content + resize_script %}
+  {% set framed_html = responsive_head + html_content %}
+  {% endif %}
+  {% if '</body>' in framed_html %}
+  {% set framed_html = framed_html.replace('</body>', resize_script + '</body>') %}
+  {% else %}
+  {% set framed_html = framed_html + resize_script %}
   {% endif %}
   <iframe id="htmlFrame" class="html-frame" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" srcdoc="{{ framed_html | e }}"></iframe>
   {% else %}

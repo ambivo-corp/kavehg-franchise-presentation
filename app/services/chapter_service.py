@@ -566,7 +566,7 @@ def _kb_lock(kb_name: str) -> asyncio.Lock:
 
 
 async def reindex_presentation(
-    presentation_id: str, tenant_id: str, user_id: str
+    presentation_id: str, tenant_id: str, user_id: str, *, force_recreate: bool = False
 ) -> dict:
     """Truncate the KB and re-index every chapter as a separate document.
 
@@ -577,8 +577,13 @@ async def reindex_presentation(
     serializes concurrent reindexes within a single process. Returns a
     summary dict; never raises (errors are logged so background callers
     don't crash the request lifecycle).
+
+    When `force_recreate=True`, the KB collection is deleted and
+    recreated from scratch instead of truncated — necessary when the
+    collection's embedding dimensions are stale (e.g. VectorDB switched
+    embedding models since the collection was first created).
     """
-    summary = {"presentation_id": presentation_id, "indexed": 0, "skipped": 0, "failed": 0}
+    summary = {"presentation_id": presentation_id, "indexed": 0, "skipped": 0, "failed": 0, "force_recreate": force_recreate}
 
     try:
         doc = await _load_presentation(presentation_id, tenant_id)
@@ -601,26 +606,43 @@ async def reindex_presentation(
         return summary
 
     async with _kb_lock(kb_name):
-        # 1. Truncate (or fall back to delete+create)
-        try:
-            await kb_service.truncate_kb(kb_name, tenant_id, user_id)
-        except Exception:
-            logger.warning(
-                "truncate_kb failed for %s — falling back to delete+create", kb_name
-            )
+        # 1. Reset the collection. Truncate only clears vectors and
+        #    keeps the collection's schema (including the embedding
+        #    dimension). When the embedding model has changed since the
+        #    collection was created, truncate is not enough — we have to
+        #    delete + create so the new collection picks up the current
+        #    model's dimensions. Callers can request that explicitly via
+        #    force_recreate=True; otherwise we start with truncate and
+        #    fall back to delete+create only on failure.
+        reset_ok = False
+        if not force_recreate:
+            try:
+                await kb_service.truncate_kb(kb_name, tenant_id, user_id)
+                reset_ok = True
+            except Exception:
+                logger.warning(
+                    "truncate_kb failed for %s — falling back to delete+create",
+                    kb_name,
+                )
+        if not reset_ok:
             try:
                 await kb_service.delete_kb(kb_name, tenant_id, user_id)
             except Exception:
                 logger.exception(
-                    "delete_kb fallback failed for %s; continuing to create", kb_name
+                    "delete_kb failed for %s; continuing to create", kb_name
                 )
             try:
                 await kb_service.create_kb(kb_name, tenant_id, user_id)
             except Exception:
                 logger.exception(
-                    "create_kb after delete failed for %s; aborting reindex", kb_name
+                    "create_kb failed for %s; aborting reindex", kb_name
                 )
                 return summary
+            if force_recreate:
+                logger.info(
+                    "Force-recreated KB %s (delete + create) before reindex",
+                    kb_name,
+                )
 
         # 2. Index each chapter
         now_iso = datetime.now(timezone.utc).isoformat()

@@ -169,6 +169,72 @@
     loadChapters();
   };
 
+  // Manual reindex buttons
+  async function callReindex(force) {
+    const path =
+      "/api/presentations/" + presentationId + "/reindex" +
+      (force ? "?force=true" : "");
+    const headers = authHeaders();
+    const resp = await fetch(path, { method: "POST", headers: headers });
+    if (!resp.ok) {
+      let detail = "HTTP " + resp.status;
+      try {
+        const body = await resp.json();
+        if (body && body.detail) detail = body.detail;
+      } catch (_) {}
+      throw new Error(detail);
+    }
+    return resp.json();
+  }
+
+  const reindexBtn = document.getElementById("btnReindexKb");
+  const resetBtn = document.getElementById("btnResetKb");
+  if (reindexBtn) {
+    reindexBtn.addEventListener("click", async function () {
+      reindexBtn.disabled = true;
+      const orig = reindexBtn.textContent;
+      reindexBtn.textContent = "Scheduling…";
+      try {
+        await callReindex(false);
+        setUploadStatus("Reindex scheduled — chapters will refresh in a moment.", "info");
+        // Refresh after a beat so the user sees indexed_at flip
+        setTimeout(loadChapters, 2500);
+      } catch (err) {
+        setUploadStatus("Reindex failed: " + err.message, "error");
+      } finally {
+        reindexBtn.textContent = orig;
+        reindexBtn.disabled = false;
+      }
+    });
+  }
+  if (resetBtn) {
+    resetBtn.addEventListener("click", async function () {
+      const ok = confirm(
+        "This will delete the knowledge-base collection and rebuild it from scratch.\n\n" +
+        "Use this if chat returns a vector-dimension error.\n\n" +
+        "Chat will be unavailable for a few seconds during the rebuild. Continue?"
+      );
+      if (!ok) return;
+      resetBtn.disabled = true;
+      const orig = resetBtn.textContent;
+      resetBtn.textContent = "Resetting…";
+      try {
+        await callReindex(true);
+        setUploadStatus(
+          "KB reset + reindex scheduled. Wait a few seconds, then test chat. " +
+          "Chapter rows will flip back to 'indexed' shortly.",
+          "info"
+        );
+        setTimeout(loadChapters, 3500);
+      } catch (err) {
+        setUploadStatus("Reset failed: " + err.message, "error");
+      } finally {
+        resetBtn.textContent = orig;
+        resetBtn.disabled = false;
+      }
+    });
+  }
+
   // ----- Delete -----
   list.addEventListener("click", async function (e) {
     const target = e.target.closest("[data-action]");

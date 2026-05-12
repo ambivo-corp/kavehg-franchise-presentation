@@ -520,11 +520,17 @@ async def bulk_import_chapters(
 async def trigger_reindex(
     presentation_id: str,
     background_tasks: BackgroundTasks,
+    force: bool = Query(False, description="Delete + recreate the KB collection before reindexing. Use when embedding dimensions are stale."),
     user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Manually schedule a KB re-index for this presentation.
 
     Returns 202 Accepted — the actual reindex runs in the background.
+
+    Set `?force=true` to delete and recreate the KB collection (rather
+    than truncate) — needed when the collection's embedding dimension
+    is stale, e.g. when VectorDB switched embedding models since the
+    collection was first created.
     """
     # Validate the presentation exists + belongs to tenant before scheduling.
     try:
@@ -537,5 +543,10 @@ async def trigger_reindex(
         presentation_id,
         user["tenant_id"],
         user["userid"],
+        force_recreate=force,
     )
-    return {"status": "scheduled", "presentation_id": presentation_id}
+    return {
+        "status": "scheduled",
+        "presentation_id": presentation_id,
+        "force_recreate": force,
+    }

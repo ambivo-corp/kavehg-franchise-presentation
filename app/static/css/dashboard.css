@@ -523,6 +523,18 @@ tr:last-child td { border-bottom: none; }
   color: #6b7280;
   font-size: .85rem;
 }
+.chapters-header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: .5rem;
+}
+.btn-danger-ghost {
+  color: #b45309 !important;
+  border-color: #f3e8d2;
+}
+.btn-danger-ghost:hover {
+  background: #fffbeb;
+}
 
 .chapters-upload-zone {
   margin: 1rem 0;

@@ -20,7 +20,12 @@
   var panel = el("div", { className: "chat-panel" });
 
   var header = el("div", { className: "chat-header" });
-  header.innerHTML = '<span>Ask about this page</span>';
+  // Title is context-aware: "this guide" when rendered inside a
+  // multi-chapter reader (presence of #bookChaptersData), otherwise
+  // "this page".
+  var _isBookPage = !!document.getElementById("bookChaptersData");
+  var _chatTitle = _isBookPage ? "Ask about this guide" : "Ask about this page";
+  header.innerHTML = '<span>' + _chatTitle + '</span>';
   var clearBtn = el("button", { className: "chat-clear-btn", title: "Clear conversation" });
   clearBtn.textContent = "\u21BB";
   var closeBtn = el("button", {});

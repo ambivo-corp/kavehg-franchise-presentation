@@ -210,6 +210,16 @@
           <div class="chapters-header">
             <h3>Chapters</h3>
             <span id="chaptersCount" class="chapters-count"></span>
+            <div class="chapters-header-actions">
+              <button type="button" class="btn-sm btn-ghost" id="btnReindexKb"
+                title="Re-run KB indexing for all chapters (truncate + index).">
+                Reindex
+              </button>
+              <button type="button" class="btn-sm btn-ghost btn-danger-ghost" id="btnResetKb"
+                title="Delete and recreate the KB collection, then re-index all chapters. Use this if chat returns vector-dimension errors.">
+                Reset KB &amp; Reindex
+              </button>
+            </div>
           </div>
           <p class="form-hint">
             Drag rows to reorder. Click a row to edit its content. Filenames you upload
