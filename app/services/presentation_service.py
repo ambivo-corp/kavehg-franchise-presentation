@@ -87,6 +87,16 @@ def _resolve_theme(theme_update) -> dict:
     return data
 
 
+def _effective_access_mode(doc: dict) -> str:
+    """Resolve the access mode honoring legacy access_protected."""
+    mode = doc.get("access_mode")
+    if mode:
+        return mode
+    if doc.get("access_protected") and doc.get("access_codes"):
+        return "access_code"
+    return "public"
+
+
 def _build_theme(doc: dict) -> ThemeConfig:
     t = doc.get("theme") or {}
     return ThemeConfig(
@@ -113,6 +123,7 @@ def _doc_to_response(doc: dict, base_url: str = "", stats: dict | None = None) -
         is_published=doc.get("is_published", True),
         chat_enabled=doc.get("chat_enabled", True),
         access_protected=doc.get("access_protected", False),
+        access_mode=_effective_access_mode(doc),
         access_codes=doc.get("access_codes", []),
         header=_build_header(doc, base_url),
         theme=_build_theme(doc),
@@ -139,6 +150,7 @@ def _doc_to_detail(doc: dict, base_url: str = "", stats: dict | None = None) -> 
         is_published=doc.get("is_published", True),
         chat_enabled=doc.get("chat_enabled", True),
         access_protected=doc.get("access_protected", False),
+        access_mode=_effective_access_mode(doc),
         access_codes=doc.get("access_codes", []),
         header=_build_header(doc, base_url),
         theme=_build_theme(doc),
@@ -349,13 +361,35 @@ async def update(
             logger.exception(f"KB index_text failed for {kb_name}")
             raise
 
+    # Access mode (preferred, drives derived flags below)
+    if data.access_mode is not None:
+        updates["access_mode"] = data.access_mode
+        if data.access_mode == "access_code":
+            updates["access_protected"] = True
+            # Only auto-generate codes if none exist and caller didn't provide
+            if not doc.get("access_codes") and data.access_codes is None:
+                updates["access_codes"] = _generate_access_codes(3)
+        else:
+            updates["access_protected"] = False
+            if data.access_codes is None:
+                updates["access_codes"] = []
+
     # Access protection — direct code management
     if data.access_codes is not None:
         updates["access_codes"] = _validate_access_codes(data.access_codes)
+        # If caller explicitly set codes, treat protected as derived
         updates["access_protected"] = len(updates["access_codes"]) > 0
+        # Codes implies access_code mode unless caller explicitly set another
+        if "access_mode" not in updates and updates["access_protected"]:
+            updates["access_mode"] = "access_code"
 
     # Access protection toggle (only auto-generate when codes weren't explicitly provided)
-    if data.access_protected is not None and data.access_codes is None:
+    # Skip when access_mode already drove the change above.
+    if (
+        data.access_protected is not None
+        and data.access_codes is None
+        and "access_protected" not in updates
+    ):
         updates["access_protected"] = data.access_protected
         if data.access_protected and not doc.get("access_codes"):
             updates["access_codes"] = _generate_access_codes(3)
@@ -365,6 +399,7 @@ async def update(
     if data.regenerate_codes is not None and data.regenerate_codes > 0:
         updates["access_codes"] = _generate_access_codes(data.regenerate_codes)
         updates["access_protected"] = True
+        updates["access_mode"] = "access_code"
 
     # Header
     if data.header is not None:

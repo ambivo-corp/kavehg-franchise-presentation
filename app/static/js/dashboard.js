@@ -740,6 +740,33 @@
 
     var pendingLogoDelete = false;
 
+    // Access mode select drives the visibility of access_codes section
+    // and keeps the legacy hidden f_access checkbox in sync so other
+    // bits of code that still read it continue to work.
+    function applyAccessMode(mode) {
+      var legacy = document.getElementById("f_access");
+      var section = document.getElementById("accessCodesSection");
+      var hint = document.getElementById("accessModeHint");
+      var isCode = mode === "access_code";
+      if (legacy) legacy.checked = isCode;
+      if (section) section.style.display = isCode ? "" : "none";
+      if (hint) {
+        if (mode === "public") {
+          hint.textContent = "No restrictions. The hosted link is the only secret.";
+        } else if (mode === "ambivo_session") {
+          hint.textContent = "Page validates an Ambivo JWT (Authorization header or ?token= query). Use this for embedding inside the Ambivo product.";
+        } else {
+          hint.textContent = "Visitors must enter a valid access code. Codes can be auto-generated or added below.";
+        }
+      }
+    }
+    var accessModeSelect = document.getElementById("f_access_mode");
+    if (accessModeSelect) {
+      accessModeSelect.addEventListener("change", function () {
+        applyAccessMode(accessModeSelect.value);
+      });
+    }
+
     var accessCodes = [];
     var CODE_RE = /^[A-Z0-9]{3,12}$/;
 
@@ -785,12 +812,11 @@
           document.getElementById("f_html").value = p.html_content;
         }
 
-        // Access codes
-        var accessCheckbox = document.getElementById("f_access");
-        accessCheckbox.checked = !!p.access_protected;
-        if (p.access_protected) {
-          document.getElementById("accessCodesSection").style.display = "";
-        }
+        // Access mode + codes
+        var loadedMode = p.access_mode
+          || (p.access_protected ? "access_code" : "public");
+        if (accessModeSelect) accessModeSelect.value = loadedMode;
+        applyAccessMode(loadedMode);
         setAccessCodes(p.access_codes);
 
         // Header
@@ -943,7 +969,8 @@
       btn.disabled = true;
       btn.textContent = "Updating\u2026";
 
-      var isProtected = document.getElementById("f_access").checked;
+      var accessMode = (accessModeSelect && accessModeSelect.value) || "public";
+      var isProtected = accessMode === "access_code";
       var contentType = document.getElementById("f_content_type").value;
 
       // Validate content is not empty
@@ -966,6 +993,7 @@
         description: document.getElementById("f_desc").value.trim() || null,
         tags: tagsWidgetEdit.getTags(),
         chat_enabled: document.getElementById("f_chat").checked,
+        access_mode: accessMode,
         access_protected: isProtected,
         header: getHeaderFields(),
       };

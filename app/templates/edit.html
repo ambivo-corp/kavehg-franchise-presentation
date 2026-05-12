@@ -76,13 +76,15 @@
             </div>
           </div>
 
-          <div class="toggle-row">
-            <label for="f_access">Access code protected</label>
-            <div class="toggle">
-              <input type="checkbox" id="f_access">
-              <span class="slider"></span>
-            </div>
-          </div>
+          <label for="f_access_mode">Who can view this page?</label>
+          <select id="f_access_mode" style="margin-bottom:.5rem">
+            <option value="public">Public — anyone with the link</option>
+            <option value="access_code">Access code — visitors enter a code</option>
+            <option value="ambivo_session">Ambivo session — logged-in Ambivo users only</option>
+          </select>
+          <p class="form-hint" id="accessModeHint"></p>
+          <!-- hidden mirror kept for back-compat with legacy boolean access_protected -->
+          <input type="checkbox" id="f_access" style="display:none">
           <div id="accessCodesSection" style="display:none">
             <label style="margin-bottom:.3rem">Access codes:</label>
             <div class="access-codes-list" id="accessCodesList"></div>
