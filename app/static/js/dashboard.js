@@ -956,6 +956,29 @@
         document.getElementById("f_chat").checked = p.chat_enabled !== false;
         tagsWidgetEdit.setTags(p.tags || []);
 
+        // Live URL — display the hosted_url returned by the API, fall
+        // back to /p/{slug} on the current origin.
+        var liveUrl = p.hosted_url
+          || (window.location.origin + "/p/" + encodeURIComponent(p.slug || ""));
+        var liveLink = document.getElementById("liveUrlLink");
+        if (liveLink) {
+          liveLink.href = liveUrl;
+          liveLink.textContent = liveUrl;
+        }
+        var gateEl = document.getElementById("liveUrlGate");
+        if (gateEl) {
+          var mode = p.access_mode || (p.access_protected ? "access_code" : "public");
+          if (mode === "ambivo_session") {
+            gateEl.textContent = "Requires a logged-in Ambivo session (or a ?token=<JWT> URL parameter).";
+            gateEl.style.display = "";
+          } else if (mode === "access_code") {
+            gateEl.textContent = "Visitors will be prompted for an access code.";
+            gateEl.style.display = "";
+          } else {
+            gateEl.style.display = "none";
+          }
+        }
+
         // Content type
         var ct = p.content_type || "markdown";
         contentTypeToggle.activate(ct);
@@ -1110,6 +1133,27 @@
     var statQueriesWrap = document.getElementById("statQueriesWrap");
     if (statQueriesWrap) {
       statQueriesWrap.addEventListener("click", function () { openQueriesModal(editId); });
+    }
+
+    // Live-URL copy button
+    var copyLiveBtn = document.getElementById("btnCopyLiveUrl");
+    if (copyLiveBtn) {
+      copyLiveBtn.addEventListener("click", function () {
+        var url = (document.getElementById("liveUrlLink") || {}).href || "";
+        if (!url) return;
+        var done = function () {
+          var orig = copyLiveBtn.textContent;
+          copyLiveBtn.textContent = "Copied";
+          setTimeout(function () { copyLiveBtn.textContent = orig; }, 1200);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(url).then(done, function () {
+            window.prompt("Copy this URL:", url);
+          });
+        } else {
+          window.prompt("Copy this URL:", url);
+        }
+      });
     }
 
     editForm.addEventListener("submit", function (e) {

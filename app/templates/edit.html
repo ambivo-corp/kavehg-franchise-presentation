@@ -63,6 +63,13 @@
           <input type="text" id="f_slug" disabled style="background:#f3f4f6;color:#6b7280">
           <p class="form-hint">Slug cannot be changed after creation</p>
 
+          <label>Live URL</label>
+          <div class="live-url-row">
+            <a id="liveUrlLink" href="#" target="_blank" rel="noopener" class="live-url-link"></a>
+            <button type="button" class="btn-sm btn-ghost" id="btnCopyLiveUrl" title="Copy to clipboard">Copy</button>
+            <span class="form-hint" id="liveUrlGate" style="display:none"></span>
+          </div>
+
           <label>Tags</label>
           <div class="tags-input" id="tagsContainer">
             <input type="text" placeholder="Type and press Enter">
