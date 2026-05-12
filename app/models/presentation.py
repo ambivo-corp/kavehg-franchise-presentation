@@ -6,6 +6,46 @@ from typing import Literal
 from pydantic import BaseModel
 
 
+Layout = Literal["single", "book"]
+AccessMode = Literal["public", "access_code", "ambivo_session"]
+
+
+class ChapterCreate(BaseModel):
+    title: str
+    slug: str | None = None
+    order: int | None = None
+    section: str | None = None
+    content_type: Literal["markdown", "html"] = "markdown"
+    markdown_content: str = ""
+    html_content: str | None = None
+
+
+class ChapterUpdate(BaseModel):
+    title: str | None = None
+    slug: str | None = None
+    order: int | None = None
+    section: str | None = None
+    content_type: Literal["markdown", "html"] | None = None
+    markdown_content: str | None = None
+    html_content: str | None = None
+
+
+class ChapterResponse(BaseModel):
+    chapter_id: str
+    order: int
+    title: str
+    slug: str
+    section: str | None = None
+    content_type: str = "markdown"
+    indexed_at: str | None = None
+
+
+class ChapterDetail(ChapterResponse):
+    markdown_content: str
+    html_content: str | None = None
+    content_hash: str
+
+
 class ThemeConfig(BaseModel):
     """Visual theme for a hosted page."""
     preset: str | None = None       # "modern", "minimal", "bold", "warm", "nature", "dark"
@@ -67,9 +107,12 @@ class PresentationCreate(BaseModel):
     tags: list[str] = []
     chat_enabled: bool = False
     access_protected: bool = False
+    access_mode: AccessMode | None = None
     num_access_codes: int = 3
     header: HeaderUpdate | None = None
     theme: ThemeUpdate | None = None
+    layout: Layout = "single"
+    chapters: list[ChapterCreate] | None = None
 
 
 class PresentationUpdate(BaseModel):
@@ -81,10 +124,12 @@ class PresentationUpdate(BaseModel):
     tags: list[str] | None = None
     chat_enabled: bool | None = None
     access_protected: bool | None = None
+    access_mode: AccessMode | None = None
     access_codes: list[str] | None = None
     regenerate_codes: int | None = None
     header: HeaderUpdate | None = None
     theme: ThemeUpdate | None = None
+    layout: Layout | None = None
 
 
 class PresentationResponse(BaseModel):
@@ -98,11 +143,14 @@ class PresentationResponse(BaseModel):
     is_published: bool
     chat_enabled: bool
     access_protected: bool = False
+    access_mode: AccessMode = "public"
     access_codes: list[str] = []
     header: HeaderConfig = HeaderConfig()
     theme: ThemeConfig = ThemeConfig()
     description: str | None = None
     tags: list[str] = []
+    layout: Layout = "single"
+    chapters: list[ChapterResponse] = []
     created_at: str
     updated_at: str
     # Stats
@@ -114,6 +162,7 @@ class PresentationResponse(BaseModel):
 class PresentationDetail(PresentationResponse):
     markdown_content: str
     html_content: str | None = None
+    chapters: list[ChapterDetail] = []  # type: ignore[assignment]
 
 
 class ChatRequest(BaseModel):
