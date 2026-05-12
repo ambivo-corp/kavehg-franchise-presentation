@@ -214,11 +214,16 @@
             <input type="file" id="chaptersFileInput" multiple
               accept=".md,.markdown,.txt,.html,.htm,.pdf,.docx,.pptx,.xlsx"
               style="display:none">
+            <input type="file" id="chaptersFolderInput" webkitdirectory directory
+              style="display:none">
             <p>
               <button type="button" class="btn-sm btn-primary" id="btnChaptersPick">
                 Upload chapters
               </button>
-              <span class="form-hint">or drop files here (.md, .pdf, .docx, .pptx)</span>
+              <button type="button" class="btn-sm btn-ghost" id="btnChaptersPickFolder">
+                Choose folder
+              </button>
+              <span class="form-hint">or drop files (.md, .pdf, .docx, .pptx)</span>
             </p>
           </div>
 

@@ -15,9 +15,30 @@
   const list = document.getElementById("chaptersList");
   const countEl = document.getElementById("chaptersCount");
   const fileInput = document.getElementById("chaptersFileInput");
+  const folderInput = document.getElementById("chaptersFolderInput");
   const pickBtn = document.getElementById("btnChaptersPick");
+  const pickFolderBtn = document.getElementById("btnChaptersPickFolder");
   const uploadZone = document.getElementById("chaptersUploadZone");
   const uploadStatus = document.getElementById("chaptersUploadStatus");
+
+  const SUPPORTED_EXTS = [
+    "md", "markdown", "txt", "html", "htm",
+    "pdf", "docx", "pptx", "xlsx"
+  ];
+
+  function relativeName(file) {
+    return file.webkitRelativePath || file.name || "";
+  }
+
+  function isSupportedFile(file) {
+    const name = relativeName(file);
+    if (!name) return false;
+    if (name.indexOf("__MACOSX") !== -1) return false;
+    const base = name.split("/").pop();
+    if (!base || base.charAt(0) === ".") return false;
+    const ext = (base.split(".").pop() || "").toLowerCase();
+    return SUPPORTED_EXTS.indexOf(ext) !== -1;
+  }
 
   // Modal references (slice 8d)
   const modal = document.getElementById("chapterModal");
@@ -193,10 +214,30 @@
 
   async function uploadFiles(files) {
     if (!files || !files.length) return;
-    const fd = new FormData();
-    for (let i = 0; i < files.length; i += 1) fd.append("files", files[i]);
 
-    setUploadStatus("Uploading " + files.length + " file(s)…", "info");
+    // Filter to supported extensions (folder pickers grab everything)
+    const all = Array.prototype.slice.call(files);
+    const filtered = all.filter(isSupportedFile);
+    const skipped = all.length - filtered.length;
+    if (!filtered.length) {
+      setUploadStatus(
+        "No supported files found in selection (looking for .md / .pdf / .docx / .pptx / .xlsx / .html / .txt).",
+        "warn"
+      );
+      return;
+    }
+
+    const fd = new FormData();
+    for (let i = 0; i < filtered.length; i += 1) {
+      // Preserve folder path so server-side natural-sort and section
+      // derivation see the full relative path.
+      fd.append("files", filtered[i], relativeName(filtered[i]));
+    }
+
+    const skipNote = skipped > 0
+      ? " (" + skipped + " unsupported file" + (skipped === 1 ? "" : "s") + " skipped)"
+      : "";
+    setUploadStatus("Uploading " + filtered.length + " file(s)" + skipNote + "…", "info");
     try {
       const headers = authHeaders();
       delete headers["Content-Type"]; // browser sets boundary
@@ -244,10 +285,21 @@
       if (fileInput) fileInput.click();
     });
   }
+  if (pickFolderBtn) {
+    pickFolderBtn.addEventListener("click", function () {
+      if (folderInput) folderInput.click();
+    });
+  }
   if (fileInput) {
     fileInput.addEventListener("change", function () {
       uploadFiles(fileInput.files);
       fileInput.value = "";
+    });
+  }
+  if (folderInput) {
+    folderInput.addEventListener("change", function () {
+      uploadFiles(folderInput.files);
+      folderInput.value = "";
     });
   }
   if (uploadZone) {

@@ -184,13 +184,17 @@
           <input type="file" id="createFileInput" multiple
             accept=".md,.markdown,.txt,.html,.htm,.pdf,.docx,.pptx,.xlsx"
             style="display:none">
+          <input type="file" id="createFolderInput" webkitdirectory directory
+            style="display:none">
           <p>
             <button type="button" class="btn-sm btn-primary" id="btnCreatePick">
               Upload files
             </button>
+            <button type="button" class="btn-sm btn-ghost" id="btnCreatePickFolder">
+              Choose folder
+            </button>
             <span class="form-hint">
-              or drop .md / .pdf / .docx / .pptx files here
-              (each file becomes a chapter)
+              or drop files here — each .md / .pdf / .docx / .pptx becomes a chapter
             </span>
           </p>
           <div id="createUploadPreview" style="display:none;margin-top:.5rem;font-size:.82rem;color:#374151"></div>

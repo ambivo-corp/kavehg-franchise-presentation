@@ -444,7 +444,25 @@ async def bulk_import_chapters(
     new_chapters: list[dict] = []
 
     for filename, conv in converted:
-        base_slug = slugify(Path(filename).stem) or "chapter"
+        # Slug uses the full path minus extension so that
+        # "section1/intro.md" and "section2/intro.md" don't collide.
+        path_obj = Path(filename)
+        path_no_ext = str(path_obj.with_suffix("")) if path_obj.suffix else filename
+        base_slug = slugify(path_no_ext) or "chapter"
+
+        # When uploads include real subfolders (e.g. via
+        # webkitdirectory with section dirs), derive a section label
+        # from the first subfolder inside the picked root. A single
+        # picked folder with files directly inside has only 2 path
+        # parts and produces no section so we don't bloat the list
+        # with a label that matches the book itself.
+        section_label: str | None = None
+        parts = path_obj.parts
+        if len(parts) >= 3:
+            section_label = re.sub(
+                r"[-_]+", " ", parts[1]
+            ).strip().title() or None
+
         try:
             content_type, md_out, html_out, hash_source = _render_chapter_content(
                 "markdown",
@@ -469,6 +487,10 @@ async def bulk_import_chapters(
                     "indexed_at": None,
                 }
             )
+            # Only overwrite section if we have a derived one and the
+            # existing chapter doesn't already have a manual section.
+            if section_label and not ex.get("section"):
+                updated["section"] = section_label
             update_ops.append((ex["chapter_id"], updated))
             summary["updated"].append({"filename": filename, "slug": base_slug})
         else:
@@ -480,7 +502,7 @@ async def bulk_import_chapters(
                     "order": next_order,
                     "title": conv.suggested_title,
                     "slug": slug,
-                    "section": None,
+                    "section": section_label,
                     "content_type": content_type,
                     "markdown_content": md_out,
                     "html_content": html_out,

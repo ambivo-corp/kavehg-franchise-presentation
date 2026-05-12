@@ -632,11 +632,32 @@
     });
 
     // ── Bulk-upload zone (drop files = create as multi-chapter book)
-    var createSelectedFiles = []; // FileList-like array
+    var createSelectedFiles = []; // array of File objects
     var createUploadZone = document.getElementById("createUploadZone");
     var createFileInput = document.getElementById("createFileInput");
+    var createFolderInput = document.getElementById("createFolderInput");
     var createPickBtn = document.getElementById("btnCreatePick");
+    var createPickFolderBtn = document.getElementById("btnCreatePickFolder");
     var createUploadPreview = document.getElementById("createUploadPreview");
+
+    function fileRelativeName(file) {
+      // Files picked via webkitdirectory carry the relative path; others fall back to plain name.
+      return file.webkitRelativePath || file.name || "";
+    }
+
+    function isSupportedUploadFile(file) {
+      var name = fileRelativeName(file);
+      if (!name) return false;
+      // Strip macOS metadata / dotfiles
+      if (name.indexOf("__MACOSX") !== -1) return false;
+      var base = name.split("/").pop();
+      if (!base || base.charAt(0) === ".") return false;
+      var ext = (base.split(".").pop() || "").toLowerCase();
+      return [
+        "md", "markdown", "txt", "html", "htm",
+        "pdf", "docx", "pptx", "xlsx"
+      ].indexOf(ext) !== -1;
+    }
 
     function renderCreateUploadPreview() {
       if (!createUploadPreview) return;
@@ -645,7 +666,7 @@
         createUploadPreview.textContent = "";
         return;
       }
-      var names = createSelectedFiles.map(function (f) { return f.name; });
+      var names = createSelectedFiles.map(fileRelativeName);
       createUploadPreview.style.display = "block";
       createUploadPreview.innerHTML =
         "<strong>" + createSelectedFiles.length + " file" +
@@ -656,8 +677,24 @@
         ev.preventDefault();
         createSelectedFiles = [];
         if (createFileInput) createFileInput.value = "";
+        if (createFolderInput) createFolderInput.value = "";
         renderCreateUploadPreview();
       });
+    }
+
+    function adoptFiles(files) {
+      var all = Array.prototype.slice.call(files || []);
+      var filtered = all.filter(isSupportedUploadFile);
+      var skipped = all.length - filtered.length;
+      createSelectedFiles = filtered;
+      renderCreateUploadPreview();
+      if (skipped > 0 && createUploadPreview) {
+        var note = document.createElement("div");
+        note.style.cssText = "margin-top:.3rem;color:#9ca3af;font-size:.78rem";
+        note.textContent = skipped + " unsupported file" +
+          (skipped === 1 ? " was" : "s were") + " skipped.";
+        createUploadPreview.appendChild(note);
+      }
     }
 
     if (createPickBtn) {
@@ -665,10 +702,19 @@
         if (createFileInput) createFileInput.click();
       });
     }
+    if (createPickFolderBtn) {
+      createPickFolderBtn.addEventListener("click", function () {
+        if (createFolderInput) createFolderInput.click();
+      });
+    }
     if (createFileInput) {
       createFileInput.addEventListener("change", function () {
-        createSelectedFiles = Array.prototype.slice.call(createFileInput.files || []);
-        renderCreateUploadPreview();
+        adoptFiles(createFileInput.files);
+      });
+    }
+    if (createFolderInput) {
+      createFolderInput.addEventListener("change", function () {
+        adoptFiles(createFolderInput.files);
       });
     }
     if (createUploadZone) {
@@ -686,8 +732,7 @@
       });
       createUploadZone.addEventListener("drop", function (e) {
         if (e.dataTransfer && e.dataTransfer.files) {
-          createSelectedFiles = Array.prototype.slice.call(e.dataTransfer.files);
-          renderCreateUploadPreview();
+          adoptFiles(e.dataTransfer.files);
         }
       });
     }
@@ -750,7 +795,11 @@
         btn.textContent = "Uploading chapters…";
         var fd = new FormData();
         for (var i = 0; i < createSelectedFiles.length; i += 1) {
-          fd.append("files", createSelectedFiles[i]);
+          var file = createSelectedFiles[i];
+          // Use the relative path (folder/subfolder/file.md) as the
+          // filename so server-side natural sort + slug derivation see
+          // the full path. Falls back to bare name for normal pickers.
+          fd.append("files", file, fileRelativeName(file));
         }
         var headers = authHeaders();
         delete headers["Content-Type"]; // let browser set multipart boundary
