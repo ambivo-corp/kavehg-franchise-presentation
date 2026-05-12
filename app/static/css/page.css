@@ -99,6 +99,25 @@ body {
 .content h3 { font-size: 1.25rem; margin: 1.5rem 0 .5rem; }
 .content h4, .content h5, .content h6 { font-size: 1rem; margin: 1.25rem 0 .5rem; }
 
+/* TOC extension appends a pilcrow anchor (.headerlink) after each
+ * heading for deep-linking. Hide until the heading is hovered, then
+ * show small and faint so it doesn't fight the heading itself. */
+.content :is(h1, h2, h3, h4, h5, h6) .headerlink {
+  visibility: hidden;
+  margin-left: .35em;
+  font-size: .7em;
+  font-weight: normal;
+  color: var(--text-light);
+  text-decoration: none;
+  vertical-align: middle;
+}
+.content :is(h1, h2, h3, h4, h5, h6):hover .headerlink {
+  visibility: visible;
+}
+.content .headerlink:hover {
+  color: var(--primary);
+}
+
 .content p { margin: 0 0 1rem; }
 .content a { color: var(--primary); text-decoration: none; }
 .content a:hover { text-decoration: underline; }
