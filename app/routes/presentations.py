@@ -5,11 +5,21 @@ import logging
 
 from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
+from pydantic import BaseModel
 from typing import Dict, Any
 
 from app.auth.jwt_auth import get_current_user
-from app.models.presentation import PresentationCreate, PresentationUpdate, PresentationResponse, PresentationDetail
-from app.services import presentation_service
+from app.models.presentation import (
+    ChapterCreate,
+    ChapterDetail,
+    ChapterResponse,
+    ChapterUpdate,
+    PresentationCreate,
+    PresentationDetail,
+    PresentationResponse,
+    PresentationUpdate,
+)
+from app.services import chapter_service, presentation_service
 
 logger = logging.getLogger(__name__)
 
@@ -187,3 +197,147 @@ async def delete_logo(
         raise HTTPException(status_code=400, detail="Invalid presentation ID format")
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Chapter CRUD (book mode)
+# ---------------------------------------------------------------------------
+
+
+def _chapter_value_status(detail: str) -> int:
+    """Map ValueError detail to an HTTP status code for chapter routes."""
+    lower = detail.lower()
+    if "not found" in lower:
+        return 404
+    return 400
+
+
+@router.get(
+    "/{presentation_id}/chapters",
+    response_model=list[ChapterResponse],
+)
+async def list_chapters(
+    presentation_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        return await chapter_service.list_chapters(presentation_id, user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=_chapter_value_status(str(e)), detail=str(e))
+    except Exception:
+        logger.exception("Failed to list chapters for presentation %s", presentation_id)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post(
+    "/{presentation_id}/chapters",
+    response_model=ChapterDetail,
+    status_code=201,
+)
+async def add_chapter(
+    presentation_id: str,
+    data: ChapterCreate,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        return await chapter_service.add_chapter(
+            presentation_id, user["tenant_id"], data
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=_chapter_value_status(str(e)), detail=str(e))
+    except Exception:
+        logger.exception("Failed to add chapter to presentation %s", presentation_id)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get(
+    "/{presentation_id}/chapters/{chapter_id}",
+    response_model=ChapterDetail,
+)
+async def get_chapter(
+    presentation_id: str,
+    chapter_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        return await chapter_service.get_chapter(
+            presentation_id, chapter_id, user["tenant_id"]
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=_chapter_value_status(str(e)), detail=str(e))
+    except Exception:
+        logger.exception(
+            "Failed to get chapter %s on presentation %s", chapter_id, presentation_id
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.put(
+    "/{presentation_id}/chapters/{chapter_id}",
+    response_model=ChapterDetail,
+)
+async def update_chapter(
+    presentation_id: str,
+    chapter_id: str,
+    data: ChapterUpdate,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        return await chapter_service.update_chapter(
+            presentation_id, chapter_id, user["tenant_id"], data
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=_chapter_value_status(str(e)), detail=str(e))
+    except Exception:
+        logger.exception(
+            "Failed to update chapter %s on presentation %s", chapter_id, presentation_id
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.delete(
+    "/{presentation_id}/chapters/{chapter_id}",
+    status_code=204,
+)
+async def delete_chapter(
+    presentation_id: str,
+    chapter_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        await chapter_service.delete_chapter(
+            presentation_id, chapter_id, user["tenant_id"]
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=_chapter_value_status(str(e)), detail=str(e))
+    except Exception:
+        logger.exception(
+            "Failed to delete chapter %s on presentation %s", chapter_id, presentation_id
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+class ReorderRequest(BaseModel):
+    chapter_ids: list[str]
+
+
+@router.put(
+    "/{presentation_id}/chapters/reorder",
+    response_model=list[ChapterResponse],
+)
+async def reorder_chapters(
+    presentation_id: str,
+    data: ReorderRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        return await chapter_service.reorder_chapters(
+            presentation_id, user["tenant_id"], data.chapter_ids
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=_chapter_value_status(str(e)), detail=str(e))
+    except Exception:
+        logger.exception(
+            "Failed to reorder chapters on presentation %s", presentation_id
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")
