@@ -4,7 +4,7 @@ Ambivo Content Portal — FastAPI application
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -12,11 +12,38 @@ from app.config import settings
 from app.db import connect_db, close_db
 from app.routes import health, presentations, public, chat, auth_routes, ai_generate
 
+SCANNER_PATTERNS = (
+    ".env",
+    "phpinfo",
+    ".php",
+    "/.git",
+    "wp-admin",
+    "wp-login",
+    "wp-content",
+    "wp-includes",
+    "/administrator/",
+    "/_profiler",
+    "server-status",
+    "server-info",
+)
+
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+class _ScannerAccessLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage().lower()
+        except Exception:
+            return True
+        return not any(s in msg for s in SCANNER_PATTERNS)
+
+
+logging.getLogger("uvicorn.access").addFilter(_ScannerAccessLogFilter())
 
 
 @asynccontextmanager
@@ -42,6 +69,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def block_scanners(request: Request, call_next):
+    path = request.url.path.lower()
+    if any(s in path for s in SCANNER_PATTERNS):
+        return Response(status_code=404)
+    return await call_next(request)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 

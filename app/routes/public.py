@@ -36,9 +36,9 @@ async def serve_page(slug: str, request: Request):
         verified_code = request.cookies.get(cookie_key)
         if not verified_code or verified_code not in doc["access_codes"]:
             return templates.TemplateResponse(
+                request,
                 "access_code.html",
                 {
-                    "request": request,
                     "title": doc["title"],
                     "slug": slug,
                 },
@@ -78,9 +78,9 @@ async def serve_page(slug: str, request: Request):
     theme = doc.get("theme") or {}
 
     return templates.TemplateResponse(
+        request,
         "page.html",
         {
-            "request": request,
             "title": doc["title"],
             "description": doc.get("description") or "",
             "content_type": content_type,

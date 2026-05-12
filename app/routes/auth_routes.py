@@ -37,29 +37,26 @@ async def root_redirect(request: Request):
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(request, "login.html")
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "dashboard.html", {
         "api_base": "",
     })
 
 
 @router.get("/dashboard/create", response_class=HTMLResponse)
 async def create_page(request: Request):
-    return templates.TemplateResponse("create.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "create.html", {
         "api_base": "",
     })
 
 
 @router.get("/dashboard/edit/{presentation_id}", response_class=HTMLResponse)
 async def edit_page(request: Request, presentation_id: str):
-    return templates.TemplateResponse("edit.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "edit.html", {
         "api_base": "",
         "presentation_id": presentation_id,
     })
