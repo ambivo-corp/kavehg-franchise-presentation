@@ -195,6 +195,61 @@
             <button type="submit" class="btn-sm btn-primary" id="submitBtn">Update Presentation</button>
           </div>
         </form>
+
+        <!-- Chapters management (book layout) -->
+        <section id="chaptersSection" class="chapters-section" style="display:none">
+          <div class="chapters-header">
+            <h3>Chapters</h3>
+            <span id="chaptersCount" class="chapters-count"></span>
+          </div>
+          <p class="form-hint">
+            Drag rows to reorder. Click a row to edit its content. Filenames you upload
+            become chapter slugs — re-uploading a file with the same name updates that
+            chapter in place.
+          </p>
+
+          <div id="chaptersUploadZone" class="chapters-upload-zone">
+            <input type="file" id="chaptersFileInput" multiple
+              accept=".md,.markdown,.txt,.html,.htm,.pdf,.docx,.pptx,.xlsx"
+              style="display:none">
+            <p>
+              <button type="button" class="btn-sm btn-primary" id="btnChaptersPick">
+                Upload chapters
+              </button>
+              <span class="form-hint">or drop files here (.md, .pdf, .docx, .pptx)</span>
+            </p>
+          </div>
+
+          <div id="chaptersUploadStatus" class="chapters-upload-status" style="display:none"></div>
+
+          <ol id="chaptersList" class="chapters-list">
+            <li class="chapters-empty">Loading chapters…</li>
+          </ol>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chapter editor modal -->
+  <div id="chapterModal" class="modal-overlay" style="display:none">
+    <div class="modal-panel modal-panel-wide">
+      <div class="modal-header">
+        <h3 id="chapterModalTitle">Edit chapter</h3>
+        <button class="modal-close" id="btnChapterClose">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-error" id="chapterFormError" style="display:none"></div>
+        <label for="chapterTitleInput">Title</label>
+        <input type="text" id="chapterTitleInput" placeholder="Chapter title">
+        <label for="chapterSectionInput">Section (optional)</label>
+        <input type="text" id="chapterSectionInput" placeholder="e.g. Getting Started">
+        <label for="chapterMarkdownInput">Markdown</label>
+        <textarea id="chapterMarkdownInput" class="md-editor" rows="20"
+          placeholder="# Chapter content..."></textarea>
+      </div>
+      <div class="modal-footer" style="justify-content:flex-end;gap:.5rem">
+        <button type="button" class="btn-sm btn-ghost" id="btnChapterCancel">Cancel</button>
+        <button type="button" class="btn-sm btn-primary" id="btnChapterSave">Save chapter</button>
       </div>
     </div>
   </div>
@@ -252,5 +307,6 @@
   <script src="https://cdn.jsdelivr.net/npm/turndown/dist/turndown.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/turndown-plugin-gfm/dist/turndown-plugin-gfm.js"></script>
   <script src="/static/js/dashboard.js"></script>
+  <script src="/static/js/chapters-editor.js" data-presentation-id="{{ presentation_id }}"></script>
 </body>
 </html>

@@ -824,6 +824,12 @@
 
         document.getElementById("editLoading").style.display = "none";
         document.getElementById("editContent").style.display = "";
+
+        // Wire chapters editor if this is a book-mode presentation.
+        if (typeof window.initChaptersEditor === "function") {
+          try { window.initChaptersEditor(p); }
+          catch (chapterErr) { console.error("initChaptersEditor failed", chapterErr); }
+        }
       })
       .catch(function (err) {
         document.getElementById("editLoading").textContent = "Error: " + err.message;
