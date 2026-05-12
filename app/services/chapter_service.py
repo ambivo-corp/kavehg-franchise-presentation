@@ -606,43 +606,46 @@ async def reindex_presentation(
         return summary
 
     async with _kb_lock(kb_name):
-        # 1. Reset the collection. Truncate only clears vectors and
-        #    keeps the collection's schema (including the embedding
-        #    dimension). When the embedding model has changed since the
-        #    collection was created, truncate is not enough — we have to
-        #    delete + create so the new collection picks up the current
-        #    model's dimensions. Callers can request that explicitly via
-        #    force_recreate=True; otherwise we start with truncate and
-        #    fall back to delete+create only on failure.
-        reset_ok = False
-        if not force_recreate:
-            try:
-                await kb_service.truncate_kb(kb_name, tenant_id, user_id)
-                reset_ok = True
-            except Exception:
-                logger.warning(
-                    "truncate_kb failed for %s — falling back to delete+create",
-                    kb_name,
-                )
-        if not reset_ok:
+        # 1. Reset the collection.
+        #
+        # Truncate only clears vectors and keeps the collection's
+        # schema (including embedding dimension). When the embedding
+        # model has changed since the collection was created, truncate
+        # is not enough — even a subsequent delete+create can be wrong
+        # because VectorDB's create_kb currently hardcodes vector_size
+        # to 1536 (qdrant_service.py:858) while the indexer now uses
+        # voyage-3-large (1024-dim). So in force_recreate mode we
+        # delete the collection and SKIP the create — letting
+        # VectorDB's index_text path auto-create the collection on
+        # first insert using the embed model's true dimensions.
+        if force_recreate:
             try:
                 await kb_service.delete_kb(kb_name, tenant_id, user_id)
-            except Exception:
-                logger.exception(
-                    "delete_kb failed for %s; continuing to create", kb_name
-                )
-            try:
-                await kb_service.create_kb(kb_name, tenant_id, user_id)
-            except Exception:
-                logger.exception(
-                    "create_kb failed for %s; aborting reindex", kb_name
-                )
-                return summary
-            if force_recreate:
                 logger.info(
-                    "Force-recreated KB %s (delete + create) before reindex",
+                    "Force-recreate: deleted KB %s; first index_text "
+                    "will auto-create with current embedder's dim",
                     kb_name,
                 )
+            except Exception:
+                logger.exception(
+                    "delete_kb failed for %s during force-recreate; "
+                    "attempting indexing anyway",
+                    kb_name,
+                )
+        else:
+            try:
+                await kb_service.truncate_kb(kb_name, tenant_id, user_id)
+            except Exception:
+                logger.warning(
+                    "truncate_kb failed for %s — falling back to delete (no create)",
+                    kb_name,
+                )
+                try:
+                    await kb_service.delete_kb(kb_name, tenant_id, user_id)
+                except Exception:
+                    logger.exception(
+                        "delete_kb fallback failed for %s; continuing", kb_name
+                    )
 
         # 2. Index each chapter
         now_iso = datetime.now(timezone.utc).isoformat()
