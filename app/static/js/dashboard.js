@@ -1030,6 +1030,11 @@
           try { window.initChaptersEditor(p); }
           catch (chapterErr) { console.error("initChaptersEditor failed", chapterErr); }
         }
+
+        // Activate the sticky save bar's dirty-tracking only after the
+        // form is fully populated, so the initial value-set events
+        // don't flag the page as dirty.
+        try { initStickySaveBar(); } catch (_) {}
       })
       .catch(function (err) {
         document.getElementById("editLoading").textContent = "Error: " + err.message;
@@ -1135,6 +1140,64 @@
       statQueriesWrap.addEventListener("click", function () { openQueriesModal(editId); });
     }
 
+    // Sticky save bar — appears at the bottom of the viewport whenever
+    // the form has unsaved changes. Submits via the button's `form`
+    // attribute so it triggers the existing editForm submit handler.
+    var _stickyInitialized = false;
+    function initStickySaveBar() {
+      if (_stickyInitialized) return;
+      _stickyInitialized = true;
+      var bar = document.getElementById("stickySaveBar");
+      if (!bar || !editForm) return;
+      function markDirty() {
+        if (!bar.classList.contains("is-visible")) {
+          bar.style.display = "";
+          // Force a paint so the slide-up transition runs
+          // eslint-disable-next-line no-unused-expressions
+          bar.offsetHeight;
+          bar.classList.add("is-visible");
+          document.body.classList.add("has-sticky-save");
+        }
+      }
+      // Most form mutations bubble input / change to the form itself.
+      editForm.addEventListener("input", markDirty, true);
+      editForm.addEventListener("change", markDirty, true);
+      // Tags widget and access-codes edits happen on sibling DOM —
+      // listen on document for the same event types so we don't miss
+      // them. Filter to elements inside the edit content card to
+      // avoid noise from other pages / overlays.
+      var editContent = document.getElementById("editContent");
+      if (editContent) {
+        editContent.addEventListener("input", markDirty, true);
+        editContent.addEventListener("change", markDirty, true);
+        editContent.addEventListener("click", function (e) {
+          // Toggle-style buttons in the access-codes / tags UI don't
+          // fire input events; rely on data attributes or specific ids.
+          var t = e.target;
+          if (!t) return;
+          if (t.matches && (
+            t.matches("[data-remove]") ||
+            t.matches("[data-edit]") ||
+            t.id === "btnAddCode" ||
+            t.id === "btnAutoGen" ||
+            t.id === "btnRegenCodes" ||
+            t.classList.contains("theme-preset-btn") ||
+            t.classList.contains("tag-remove")
+          )) {
+            markDirty();
+          }
+        }, true);
+      }
+    }
+
+    // Reset the sticky bar's dirty state on successful submit (handled
+    // in the submit flow below by hiding before redirect).
+    function hideStickySaveBar() {
+      var bar = document.getElementById("stickySaveBar");
+      if (!bar) return;
+      bar.classList.remove("is-visible");
+      document.body.classList.remove("has-sticky-save");
+    }
     // Live-URL copy button
     var copyLiveBtn = document.getElementById("btnCopyLiveUrl");
     if (copyLiveBtn) {
@@ -1160,25 +1223,35 @@
       e.preventDefault();
       var errEl = document.getElementById("formError");
       var btn = document.getElementById("submitBtn");
+      var stickyBtn = document.getElementById("stickySaveBtn");
+      var stickyStatus = document.getElementById("stickySaveStatus");
       errEl.classList.remove("show");
       btn.disabled = true;
       btn.textContent = "Updating\u2026";
+      if (stickyBtn) { stickyBtn.disabled = true; stickyBtn.textContent = "Saving\u2026"; }
+      if (stickyStatus) stickyStatus.textContent = "Saving changes\u2026";
 
       var accessMode = (accessModeSelect && accessModeSelect.value) || "public";
       var isProtected = accessMode === "access_code";
       var contentType = document.getElementById("f_content_type").value;
 
-      // Validate content is not empty
+      // Validate content is not empty — except in book mode where the
+      // server ignores the top-level content field entirely.
+      var isBook = document.getElementById("chaptersSection") &&
+                   document.getElementById("chaptersSection").style.display !== "none" &&
+                   document.querySelectorAll("#chaptersList .chapter-row").length > 0;
       var contentVal = contentType === "html"
         ? document.getElementById("f_html").value
         : document.getElementById("f_md").value;
-      if (!contentVal || !contentVal.trim()) {
+      if (!isBook && (!contentVal || !contentVal.trim())) {
         errEl.textContent = contentType === "html"
           ? "HTML content cannot be empty."
           : "Markdown content cannot be empty.";
         errEl.classList.add("show");
         btn.disabled = false;
         btn.textContent = "Update Presentation";
+        if (stickyBtn) { stickyBtn.disabled = false; stickyBtn.textContent = "Save changes"; }
+        if (stickyStatus) stickyStatus.textContent = "Unsaved changes";
         return;
       }
 
@@ -1230,6 +1303,7 @@
           }
         })
         .then(function () {
+          hideStickySaveBar();
           window.location.href = "/dashboard";
         })
         .catch(function (err) {
@@ -1237,6 +1311,8 @@
           errEl.classList.add("show");
           btn.disabled = false;
           btn.textContent = "Update Presentation";
+          if (stickyBtn) { stickyBtn.disabled = false; stickyBtn.textContent = "Save changes"; }
+          if (stickyStatus) stickyStatus.textContent = "Save failed — try again.";
         });
     });
   }
