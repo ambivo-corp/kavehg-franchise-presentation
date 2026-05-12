@@ -319,8 +319,15 @@ async def update(
     current_content_type = updates.get("content_type", doc.get("content_type", "markdown"))
     previous_content_type = doc.get("content_type", "markdown")
 
-    # Validate content type switch has matching content
-    if current_content_type != previous_content_type:
+    # In book mode, chapters[] own the content and the KB. The
+    # top-level markdown_content / html_content are unused on the read
+    # path, so a stray placeholder coming from the edit form must not
+    # be persisted or re-indexed — that would wipe out the per-chapter
+    # KB entries created by bulk_import / chapter_service.
+    is_book = doc.get("layout") == "book"
+
+    # Validate content type switch has matching content (skip in book mode)
+    if not is_book and current_content_type != previous_content_type:
         if current_content_type == "html" and (data.html_content is None or not data.html_content.strip()):
             raise ValueError("HTML content is required when switching to HTML content type")
         if current_content_type == "markdown" and (data.markdown_content is None or not data.markdown_content.strip()):
@@ -330,7 +337,15 @@ async def update(
     content_changed = False
     kb_text = None
 
-    if current_content_type == "html" and data.html_content is not None:
+    if is_book:
+        # Ignore content fields entirely in book mode.
+        if data.markdown_content is not None or data.html_content is not None:
+            logger.info(
+                "Ignoring top-level content update for book-layout presentation %s "
+                "(chapters own the KB)",
+                presentation_id,
+            )
+    elif current_content_type == "html" and data.html_content is not None:
         if not data.html_content.strip():
             raise ValueError("HTML content cannot be empty")
         if data.html_content != doc.get("html_content"):
