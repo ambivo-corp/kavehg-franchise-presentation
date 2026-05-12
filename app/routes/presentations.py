@@ -4,7 +4,16 @@ Authenticated CRUD routes for presentations
 import logging
 
 from bson.errors import InvalidId
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from pydantic import BaseModel
 from typing import Dict, Any
 
@@ -237,10 +246,11 @@ async def list_chapters(
 async def add_chapter(
     presentation_id: str,
     data: ChapterCreate,
+    background_tasks: BackgroundTasks,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
     try:
-        return await chapter_service.add_chapter(
+        result = await chapter_service.add_chapter(
             presentation_id, user["tenant_id"], data
         )
     except ValueError as e:
@@ -248,6 +258,14 @@ async def add_chapter(
     except Exception:
         logger.exception("Failed to add chapter to presentation %s", presentation_id)
         raise HTTPException(status_code=500, detail="Internal server error")
+
+    background_tasks.add_task(
+        chapter_service.reindex_presentation,
+        presentation_id,
+        user["tenant_id"],
+        user["userid"],
+    )
+    return result
 
 
 @router.get(
@@ -280,10 +298,11 @@ async def update_chapter(
     presentation_id: str,
     chapter_id: str,
     data: ChapterUpdate,
+    background_tasks: BackgroundTasks,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
     try:
-        return await chapter_service.update_chapter(
+        result = await chapter_service.update_chapter(
             presentation_id, chapter_id, user["tenant_id"], data
         )
     except ValueError as e:
@@ -294,6 +313,20 @@ async def update_chapter(
         )
         raise HTTPException(status_code=500, detail="Internal server error")
 
+    # Only reindex when content fields changed; metadata-only edits skip.
+    content_touched = any(
+        getattr(data, f) is not None
+        for f in ("content_type", "markdown_content", "html_content")
+    )
+    if content_touched:
+        background_tasks.add_task(
+            chapter_service.reindex_presentation,
+            presentation_id,
+            user["tenant_id"],
+            user["userid"],
+        )
+    return result
+
 
 @router.delete(
     "/{presentation_id}/chapters/{chapter_id}",
@@ -302,6 +335,7 @@ async def update_chapter(
 async def delete_chapter(
     presentation_id: str,
     chapter_id: str,
+    background_tasks: BackgroundTasks,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
     try:
@@ -315,6 +349,13 @@ async def delete_chapter(
             "Failed to delete chapter %s on presentation %s", chapter_id, presentation_id
         )
         raise HTTPException(status_code=500, detail="Internal server error")
+
+    background_tasks.add_task(
+        chapter_service.reindex_presentation,
+        presentation_id,
+        user["tenant_id"],
+        user["userid"],
+    )
 
 
 class ReorderRequest(BaseModel):
@@ -341,3 +382,31 @@ async def reorder_chapters(
             "Failed to reorder chapters on presentation %s", presentation_id
         )
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post(
+    "/{presentation_id}/reindex",
+    status_code=202,
+)
+async def trigger_reindex(
+    presentation_id: str,
+    background_tasks: BackgroundTasks,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Manually schedule a KB re-index for this presentation.
+
+    Returns 202 Accepted — the actual reindex runs in the background.
+    """
+    # Validate the presentation exists + belongs to tenant before scheduling.
+    try:
+        await chapter_service.list_chapters(presentation_id, user["tenant_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=_chapter_value_status(str(e)), detail=str(e))
+
+    background_tasks.add_task(
+        chapter_service.reindex_presentation,
+        presentation_id,
+        user["tenant_id"],
+        user["userid"],
+    )
+    return {"status": "scheduled", "presentation_id": presentation_id}

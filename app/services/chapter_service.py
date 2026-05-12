@@ -5,10 +5,10 @@ Chapters are stored as an array on the parent presentation document
 under the `chapters` field. Each chapter is identified by an ObjectId
 in `chapter_id`.
 
-This module does NOT trigger KB re-indexing — callers should mark
-chapters with `indexed_at=None` on content change and let the
-re-indexing slice (slice 3) pick them up.
+After mutating content, callers should schedule reindex_presentation()
+via FastAPI BackgroundTasks so the KB stays in sync with chapters[].
 """
+import asyncio
 import hashlib
 import logging
 import secrets
@@ -25,6 +25,7 @@ from app.models.presentation import (
     ChapterResponse,
     ChapterUpdate,
 )
+from app.services import kb_service
 from app.services.html_converter import _fallback_strip_tags, html_to_markdown
 from app.services.md_renderer import render_markdown
 
@@ -360,6 +361,140 @@ async def delete_chapter(
 
     logger.info("Deleted chapter %s from presentation %s", chapter_id, presentation_id)
     return True
+
+
+# ---------------------------------------------------------------------------
+# KB re-indexing
+# ---------------------------------------------------------------------------
+
+_kb_locks: dict[str, asyncio.Lock] = {}
+
+
+def _kb_lock(kb_name: str) -> asyncio.Lock:
+    lock = _kb_locks.get(kb_name)
+    if lock is None:
+        lock = asyncio.Lock()
+        _kb_locks[kb_name] = lock
+    return lock
+
+
+async def reindex_presentation(
+    presentation_id: str, tenant_id: str, user_id: str
+) -> dict:
+    """Truncate the KB and re-index every chapter as a separate document.
+
+    Each chapter is indexed under its title as `display_file_name`, so
+    VectorDB answers can carry per-chapter source attribution.
+
+    Designed to be called from FastAPI BackgroundTasks. Per-KB lock
+    serializes concurrent reindexes within a single process. Returns a
+    summary dict; never raises (errors are logged so background callers
+    don't crash the request lifecycle).
+    """
+    summary = {"presentation_id": presentation_id, "indexed": 0, "skipped": 0, "failed": 0}
+
+    try:
+        doc = await _load_presentation(presentation_id, tenant_id)
+    except ValueError as exc:
+        logger.warning("reindex aborted: %s", exc)
+        return summary
+
+    kb_name = doc.get("kb_name")
+    if not kb_name:
+        logger.warning(
+            "reindex aborted: presentation %s has no kb_name", presentation_id
+        )
+        return summary
+
+    chapters = sorted(doc.get("chapters") or [], key=lambda c: c.get("order", 0))
+    if not chapters:
+        logger.warning(
+            "reindex aborted: presentation %s has no chapters", presentation_id
+        )
+        return summary
+
+    async with _kb_lock(kb_name):
+        # 1. Truncate (or fall back to delete+create)
+        try:
+            await kb_service.truncate_kb(kb_name, tenant_id, user_id)
+        except Exception:
+            logger.warning(
+                "truncate_kb failed for %s — falling back to delete+create", kb_name
+            )
+            try:
+                await kb_service.delete_kb(kb_name, tenant_id, user_id)
+            except Exception:
+                logger.exception(
+                    "delete_kb fallback failed for %s; continuing to create", kb_name
+                )
+            try:
+                await kb_service.create_kb(kb_name, tenant_id, user_id)
+            except Exception:
+                logger.exception(
+                    "create_kb after delete failed for %s; aborting reindex", kb_name
+                )
+                return summary
+
+        # 2. Index each chapter
+        now_iso = datetime.now(timezone.utc).isoformat()
+        successful_ids: list[ObjectId] = []
+        for ch in chapters:
+            text = ch.get("markdown_content") or ""
+            if not text.strip():
+                logger.warning(
+                    "Skipping empty chapter '%s' on reindex of %s",
+                    ch.get("title"),
+                    kb_name,
+                )
+                summary["skipped"] += 1
+                continue
+            display_name = ch.get("title") or "Chapter"
+            try:
+                await kb_service.index_text(
+                    kb_name=kb_name,
+                    text=text,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    display_file_name=display_name,
+                )
+                successful_ids.append(ch["chapter_id"])
+                summary["indexed"] += 1
+            except Exception:
+                logger.exception(
+                    "index_text failed for chapter '%s' in %s",
+                    display_name,
+                    kb_name,
+                )
+                summary["failed"] += 1
+
+        # 3. Mark indexed_at on successful chapters
+        if successful_ids:
+            coll = get_db()[COLLECTION]
+            try:
+                await coll.update_one(
+                    {"_id": doc["_id"]},
+                    {
+                        "$set": {
+                            "chapters.$[ch].indexed_at": now_iso,
+                        }
+                    },
+                    array_filters=[{"ch.chapter_id": {"$in": successful_ids}}],
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to persist indexed_at for presentation %s", presentation_id
+                )
+
+    log_fn = logger.error if summary["failed"] else logger.info
+    log_fn(
+        "Reindex of kb=%s presentation=%s: indexed=%d skipped=%d failed=%d",
+        kb_name,
+        presentation_id,
+        summary["indexed"],
+        summary["skipped"],
+        summary["failed"],
+    )
+    return summary
 
 
 async def reorder_chapters(
