@@ -11,8 +11,10 @@ via FastAPI BackgroundTasks so the KB stays in sync with chapters[].
 import asyncio
 import hashlib
 import logging
+import re
 import secrets
 from datetime import datetime, timezone
+from pathlib import Path
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -25,7 +27,12 @@ from app.models.presentation import (
     ChapterResponse,
     ChapterUpdate,
 )
-from app.services import kb_service
+from app.services import document_converter, kb_service
+from app.services.document_converter import (
+    ConversionError,
+    FileTooLargeError,
+    UnsupportedFormatError,
+)
 from app.services.html_converter import _fallback_strip_tags, html_to_markdown
 from app.services.md_renderer import render_markdown
 
@@ -361,6 +368,160 @@ async def delete_chapter(
 
     logger.info("Deleted chapter %s from presentation %s", chapter_id, presentation_id)
     return True
+
+
+# ---------------------------------------------------------------------------
+# Bulk import
+# ---------------------------------------------------------------------------
+
+
+_NATURAL_KEY_RE = re.compile(r"(\d+)")
+
+
+def _natural_sort_key(filename: str) -> tuple:
+    """Natural sort: UG-001 < UG-002 < UG-010 (not UG-1 < UG-10 < UG-2)."""
+    parts = _NATURAL_KEY_RE.split(filename)
+    return tuple(int(p) if p.isdigit() else p.lower() for p in parts)
+
+
+async def bulk_import_chapters(
+    presentation_id: str,
+    tenant_id: str,
+    files: list[tuple[str, bytes]],
+) -> dict:
+    """Convert files to markdown and create or update chapters.
+
+    Chapters are matched against existing ones by slug derived from the
+    filename stem:
+      - existing slug match → update content + title (keeps chapter_id,
+        slug, order, section)
+      - no match → append in natural-sort filename order after the
+        current last chapter
+
+    Files are converted in input order but persisted after natural-sort
+    ordering by filename so e.g. UG-001 lands before UG-002 regardless
+    of upload order.
+
+    Returns a summary {created: [...], updated: [...], failed: [...]}.
+    The reindex is NOT triggered here — the calling route should
+    schedule a single background reindex covering the full set.
+    """
+    doc = await _load_presentation(presentation_id, tenant_id)
+
+    summary: dict = {"created": [], "updated": [], "failed": []}
+
+    # Order files by natural-sort filename so chapter order is sensible.
+    files_sorted = sorted(files, key=lambda f: _natural_sort_key(f[0] or ""))
+
+    # 1. Convert everything first. Per-file failures don't poison the batch.
+    converted: list[tuple[str, document_converter.ConvertedDocument]] = []
+    for filename, data in files_sorted:
+        try:
+            doc_md = await document_converter.convert_file(data, filename)
+            converted.append((filename, doc_md))
+        except (UnsupportedFormatError, FileTooLargeError, ConversionError) as exc:
+            logger.warning("Bulk import skipped %s: %s", filename, exc)
+            summary["failed"].append({"filename": filename, "error": str(exc)})
+
+    if not converted:
+        logger.info(
+            "Bulk import on %s produced no convertible files (failed=%d)",
+            presentation_id,
+            len(summary["failed"]),
+        )
+        return summary
+
+    # 2. Plan updates vs. inserts. Re-read existing chapters for a fresh
+    #    view (the convert loop above is async and may have yielded).
+    existing = list(doc.get("chapters") or [])
+    existing_by_slug: dict[str, dict] = {
+        c.get("slug"): c for c in existing if c.get("slug")
+    }
+    used_slugs: set[str] = set(existing_by_slug.keys())
+    next_order = max((c.get("order", 0) for c in existing), default=-1) + 1
+
+    update_ops: list[tuple[ObjectId, dict]] = []
+    new_chapters: list[dict] = []
+
+    for filename, conv in converted:
+        base_slug = slugify(Path(filename).stem) or "chapter"
+        try:
+            content_type, md_out, html_out, hash_source = _render_chapter_content(
+                "markdown",
+                conv.markdown,
+                None,
+                chapter_label=conv.suggested_title,
+            )
+        except ValueError as exc:
+            summary["failed"].append({"filename": filename, "error": str(exc)})
+            continue
+
+        if base_slug in existing_by_slug:
+            ex = existing_by_slug[base_slug]
+            updated = dict(ex)
+            updated.update(
+                {
+                    "title": conv.suggested_title,
+                    "content_type": content_type,
+                    "markdown_content": md_out,
+                    "html_content": html_out,
+                    "content_hash": _content_hash(hash_source),
+                    "indexed_at": None,
+                }
+            )
+            update_ops.append((ex["chapter_id"], updated))
+            summary["updated"].append({"filename": filename, "slug": base_slug})
+        else:
+            slug = _unique_chapter_slug(base_slug, used_slugs)
+            used_slugs.add(slug)
+            new_chapters.append(
+                {
+                    "chapter_id": ObjectId(),
+                    "order": next_order,
+                    "title": conv.suggested_title,
+                    "slug": slug,
+                    "section": None,
+                    "content_type": content_type,
+                    "markdown_content": md_out,
+                    "html_content": html_out,
+                    "content_hash": _content_hash(hash_source),
+                    "indexed_at": None,
+                }
+            )
+            summary["created"].append({"filename": filename, "slug": slug})
+            next_order += 1
+
+    # 3. Persist.
+    now = datetime.now(timezone.utc)
+    coll = get_db()[COLLECTION]
+
+    for chapter_id, ch in update_ops:
+        await coll.update_one(
+            {
+                "_id": doc["_id"],
+                "tenant_id": tenant_id,
+                "chapters.chapter_id": chapter_id,
+            },
+            {"$set": {"chapters.$": ch, "updated_at": now}},
+        )
+
+    if new_chapters:
+        await coll.update_one(
+            {"_id": doc["_id"], "tenant_id": tenant_id},
+            {
+                "$push": {"chapters": {"$each": new_chapters}},
+                "$set": {"updated_at": now, "layout": "book"},
+            },
+        )
+
+    logger.info(
+        "Bulk import on %s: created=%d updated=%d failed=%d",
+        presentation_id,
+        len(summary["created"]),
+        len(summary["updated"]),
+        len(summary["failed"]),
+    )
+    return summary
 
 
 # ---------------------------------------------------------------------------

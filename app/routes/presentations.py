@@ -458,6 +458,61 @@ async def upload_chapter(
     return result
 
 
+@router.post("/{presentation_id}/chapters/bulk-import")
+async def bulk_import_chapters(
+    presentation_id: str,
+    background_tasks: BackgroundTasks,
+    files: list[UploadFile] = File(...),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Bulk-create or update chapters from multiple uploaded files.
+
+    Each file is converted via markitdown and matched against existing
+    chapters by slug (derived from filename stem):
+      - existing slug → update content + title in place
+      - new slug → append as a new chapter
+
+    Per-file conversion failures don't abort the batch — they're
+    reported in `failed`. Triggers a single background reindex.
+    """
+    payload: list[tuple[str, bytes]] = []
+    for uf in files:
+        try:
+            data = await uf.read()
+        except Exception:
+            logger.exception(
+                "Failed to read uploaded file %s in bulk-import for %s",
+                uf.filename,
+                presentation_id,
+            )
+            continue
+        payload.append((uf.filename or "unnamed", data))
+
+    if not payload:
+        raise HTTPException(status_code=400, detail="No files received")
+
+    try:
+        result = await chapter_service.bulk_import_chapters(
+            presentation_id, user["tenant_id"], payload
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=_chapter_value_status(str(e)), detail=str(e))
+    except Exception:
+        logger.exception(
+            "Bulk import failed for presentation %s", presentation_id
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    if result["created"] or result["updated"]:
+        background_tasks.add_task(
+            chapter_service.reindex_presentation,
+            presentation_id,
+            user["tenant_id"],
+            user["userid"],
+        )
+    return result
+
+
 @router.post(
     "/{presentation_id}/reindex",
     status_code=202,
