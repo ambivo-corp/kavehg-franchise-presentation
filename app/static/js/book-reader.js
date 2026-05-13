@@ -153,6 +153,51 @@
     try { window.hljs.highlightAll(); } catch (_) { /* noop */ }
   }
 
+  // Mobile swipe navigation — swipe left = next chapter, right = prev.
+  // Only active at the same ≤800px breakpoint that collapses the
+  // sidebar; on desktop the prev/next buttons handle paging.
+  if (content) {
+    const SWIPE_MIN_DX = 60;          // horizontal distance to count as a swipe
+    const SWIPE_MAX_DT = 500;         // milliseconds — slower than this is a scroll
+    const SWIPE_AXIS_RATIO = 1.5;     // dx must beat dy by this factor (filters vertical scrolls)
+    const isMobileViewport = () =>
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(max-width: 800px)").matches;
+    let touchStart = null;
+
+    content.addEventListener("touchstart", function (e) {
+      if (!isMobileViewport()) return;
+      if (document.body.classList.contains("book-sidebar-open")) return;
+      if (e.touches.length !== 1) { touchStart = null; return; }
+      const t = e.touches[0];
+      touchStart = { x: t.clientX, y: t.clientY, time: Date.now() };
+    }, { passive: true });
+
+    content.addEventListener("touchend", function (e) {
+      const start = touchStart;
+      touchStart = null;
+      if (!start || !isMobileViewport()) return;
+      const t = e.changedTouches && e.changedTouches[0];
+      if (!t) return;
+      const dx = t.clientX - start.x;
+      const dy = t.clientY - start.y;
+      const dt = Date.now() - start.time;
+      if (dt > SWIPE_MAX_DT) return;
+      if (Math.abs(dx) < SWIPE_MIN_DX) return;
+      if (Math.abs(dx) < Math.abs(dy) * SWIPE_AXIS_RATIO) return;
+      const idx = chapterIndex(currentSlug);
+      if (dx < 0 && idx < chapters.length - 1) {
+        renderChapter(chapters[idx + 1].slug, true);
+      } else if (dx > 0 && idx > 0) {
+        renderChapter(chapters[idx - 1].slug, true);
+      }
+    }, { passive: true });
+
+    // Abort tracking if the gesture turns into multi-touch (pinch-zoom)
+    // mid-swipe so we don't pop to a new chapter at the end.
+    content.addEventListener("touchcancel", function () { touchStart = null; }, { passive: true });
+  }
+
   // Mobile sidebar toggle
   if (toggle) {
     toggle.addEventListener("click", function () {

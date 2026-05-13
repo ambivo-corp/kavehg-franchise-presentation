@@ -749,6 +749,85 @@ body.has-sticky-save .container {
   .form-card h2 { font-size: 1.2rem; }
   .header-row { gap: .75rem; }
 
+  /* Presentations list: 8-col table → stacked card per row.
+   * thead is visually hidden; each td shows a column label injected
+   * via ::before content (matched by nth-of-type to the <th> order
+   * in dashboard.html). No JS change required. */
+  .table-wrap {
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+  .table-wrap table { display: block; min-width: 0; width: 100%; }
+  .table-wrap thead {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .table-wrap tbody { display: block; width: 100%; }
+  .table-wrap tr {
+    display: block;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 6px rgba(0,0,0,.06);
+    padding: .9rem 1rem;
+    margin-bottom: .75rem;
+  }
+  .table-wrap td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: .75rem;
+    padding: .35rem 0;
+    border-bottom: none;
+    font-size: .9rem;
+    min-width: 0;
+  }
+  .table-wrap td:first-child {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: .25rem;
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: #111827;
+    padding-top: 0;
+    padding-bottom: .5rem;
+    border-bottom: 1px solid #f3f4f6;
+    margin-bottom: .35rem;
+  }
+  .table-wrap td:not(:first-child):not(:last-child)::before {
+    color: #6b7280;
+    font-size: .8rem;
+    font-weight: 500;
+    flex: 0 0 auto;
+  }
+  .table-wrap td:nth-of-type(2)::before { content: 'Slug'; }
+  .table-wrap td:nth-of-type(3)::before { content: 'Status'; }
+  .table-wrap td:nth-of-type(4)::before { content: 'Chat'; }
+  .table-wrap td:nth-of-type(5)::before { content: 'Views'; }
+  .table-wrap td:nth-of-type(6)::before { content: 'Queries'; }
+  .table-wrap td:nth-of-type(7)::before { content: 'Created'; }
+  .table-wrap td:nth-of-type(2) a {
+    text-align: right;
+    word-break: break-all;
+    min-width: 0;
+  }
+  .table-wrap td:last-child {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: .5rem;
+    border-top: 1px solid #f3f4f6;
+    margin-top: .35rem;
+    padding-top: .65rem;
+    white-space: normal !important;
+  }
+  .table-wrap td:last-child .link,
+  .table-wrap td:last-child .btn-danger-sm {
+    margin: 0 !important;
+  }
+
   /* Theme color pickers: 3 → 2 columns */
   #themeSection .header-fields > div[style*="grid-template-columns:1fr 1fr 1fr"],
   #themeSection .header-fields > div[style*="grid-template-columns: 1fr 1fr 1fr"] {
