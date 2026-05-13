@@ -29,7 +29,7 @@ from app.models.presentation import (
     PresentationResponse,
     PresentationUpdate,
 )
-from app.services import chapter_service, document_converter, presentation_service
+from app.services import chapter_service, document_converter, kb_service, presentation_service
 from app.services.document_converter import (
     ConversionError,
     FileTooLargeError,
@@ -511,6 +511,93 @@ async def bulk_import_chapters(
             user["userid"],
         )
     return result
+
+
+def _extract_vector_size(details: dict) -> int | None:
+    """Pull the unnamed-vector size out of a Qdrant collection dump.
+
+    Mirrors QdrantService.get_collection_dim in ambivo-vectordb: handles
+    both flat ({"size": N, "distance": ...}) and named-vector
+    ({"<name>": {"size": N, ...}}) layouts. Returns None on any
+    unparseable shape.
+    """
+    try:
+        config = (details or {}).get("config") or {}
+        params = config.get("params") or {}
+        vectors = params.get("vectors") or {}
+        if not isinstance(vectors, dict):
+            return None
+        size = vectors.get("size")
+        if isinstance(size, int) and not isinstance(size, bool):
+            return size
+        default = vectors.get("")
+        if default is None and vectors:
+            default = next(iter(vectors.values()), None)
+        if isinstance(default, dict):
+            inner = default.get("size")
+            if isinstance(inner, int) and not isinstance(inner, bool):
+                return inner
+    except (AttributeError, TypeError):
+        return None
+    return None
+
+
+@router.get("/{presentation_id}/kb-info")
+async def kb_info(
+    presentation_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Diagnostic: return VectorDB's current view of this presentation's
+    KB collection — primarily the vector dimension it was created with,
+    so we can confirm whether a force-recreate actually healed a stale
+    collection or whether the collection is still pinned to the old dim.
+
+    Tenant-scoped: validates the presentation belongs to the calling
+    user's tenant before forwarding to VectorDB.
+    """
+    from bson import ObjectId
+    from app.db import get_db
+
+    try:
+        oid = ObjectId(presentation_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid presentation id")
+
+    doc = await get_db()["content_presentations"].find_one(
+        {"_id": oid, "tenant_id": user["tenant_id"]},
+        {"kb_name": 1, "slug": 1, "chapters": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Presentation not found")
+
+    kb_name = doc.get("kb_name")
+    if not kb_name:
+        raise HTTPException(
+            status_code=409, detail="Presentation has no kb_name"
+        )
+
+    try:
+        envelope = await kb_service.get_kb_info(
+            kb_name, user["tenant_id"], user["userid"]
+        )
+    except Exception as exc:
+        logger.exception("kb_info: VectorDB call failed for kb=%s", kb_name)
+        raise HTTPException(
+            status_code=502,
+            detail=f"VectorDB request failed: {type(exc).__name__}",
+        )
+
+    details = envelope.get("response") if isinstance(envelope, dict) else None
+    vector_size = _extract_vector_size(details) if isinstance(details, dict) else None
+
+    return {
+        "presentation_id": presentation_id,
+        "slug": doc.get("slug"),
+        "kb_name": kb_name,
+        "chapter_count": len(doc.get("chapters") or []),
+        "vector_size": vector_size,
+        "vectordb_envelope": envelope,
+    }
 
 
 @router.post(

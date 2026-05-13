@@ -77,6 +77,32 @@ async def delete_kb(kb_name: str, tenant_id: str, user_id: str) -> dict:
         return data
 
 
+async def get_kb_info(kb_name: str, tenant_id: str, user_id: str) -> dict:
+    """Fetch VectorDB's view of a Qdrant collection.
+
+    Hits VectorDB's `GET /pgv/collection?kb_name=<>` which returns
+    `{"result": 1, "response": <qdrant collection dump>}`. The qdrant
+    dump includes the vector dim under `config.params.vectors.size`.
+
+    Used as a diagnostic when chat returns a dim-mismatch error and we
+    want to confirm whether the collection still has the stale size,
+    or whether a recent force-recreate actually healed it.
+
+    Returns the raw VectorDB response so callers can inspect both the
+    envelope and the underlying collection details. Re-raises on HTTP
+    errors so the caller can distinguish "collection missing" (which
+    VectorDB reports as result=2 in the body) from transport errors.
+    """
+    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        resp = await client.get(
+            f"{BASE}/pgv/collection",
+            headers=_headers(tenant_id, user_id),
+            params={"kb_name": kb_name},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
 async def truncate_kb(kb_name: str, tenant_id: str, user_id: str) -> dict:
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         resp = await client.delete(
