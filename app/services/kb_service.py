@@ -26,6 +26,22 @@ def _headers(tenant_id: str, user_id: str) -> dict:
     return h
 
 
+def _auth_params(tenant_id: str, user_id: str) -> dict:
+    """VectorDB's internal-auth resolver (_resolve_internal_auth_context
+    in pg_vector.py) only reads tenant_id/userid from the request body
+    or query string — it ignores X-TENANT-ID / X-USER-ID headers. For
+    calls without a JSON body (DELETE, GET) we must put them in the
+    query string or the resolver rejects with 403, and the BG reindex
+    swallows the error and proceeds to index against a still-stale
+    collection."""
+    p = {}
+    if tenant_id:
+        p["tenant_id"] = tenant_id
+    if user_id:
+        p["userid"] = user_id
+    return p
+
+
 async def create_kb(kb_name: str, tenant_id: str, user_id: str) -> dict:
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         resp = await client.post(
@@ -69,8 +85,13 @@ async def delete_kb(kb_name: str, tenant_id: str, user_id: str) -> dict:
         resp = await client.delete(
             f"{BASE}/pgv/collection",
             headers=_headers(tenant_id, user_id),
-            params={"kb_name": kb_name},
+            params={"kb_name": kb_name, **_auth_params(tenant_id, user_id)},
         )
+        if resp.status_code >= 400:
+            logger.error(
+                "delete_kb failed: status=%s body=%s kb_name=%s tenant_id=%s",
+                resp.status_code, resp.text[:1000], kb_name, tenant_id,
+            )
         resp.raise_for_status()
         data = resp.json()
         logger.info(f"Deleted KB: {kb_name}")
@@ -97,8 +118,13 @@ async def get_kb_info(kb_name: str, tenant_id: str, user_id: str) -> dict:
         resp = await client.get(
             f"{BASE}/pgv/collection",
             headers=_headers(tenant_id, user_id),
-            params={"kb_name": kb_name},
+            params={"kb_name": kb_name, **_auth_params(tenant_id, user_id)},
         )
+        if resp.status_code >= 400:
+            logger.error(
+                "get_kb_info failed: status=%s body=%s kb_name=%s tenant_id=%s",
+                resp.status_code, resp.text[:1000], kb_name, tenant_id,
+            )
         resp.raise_for_status()
         return resp.json()
 
@@ -108,7 +134,11 @@ async def truncate_kb(kb_name: str, tenant_id: str, user_id: str) -> dict:
         resp = await client.delete(
             f"{BASE}/pgv/collection",
             headers=_headers(tenant_id, user_id),
-            params={"kb_name": kb_name, "action": "truncate"},
+            params={
+                "kb_name": kb_name,
+                "action": "truncate",
+                **_auth_params(tenant_id, user_id),
+            },
         )
         if resp.status_code >= 400:
             logger.error(
