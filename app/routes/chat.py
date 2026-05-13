@@ -7,7 +7,9 @@ Access modes mirror /p/{slug}:
   - ambivo_session       → require a valid bearer token; attribute query
                            to the authenticated Ambivo user
 """
+import asyncio
 import json
+import re
 import time
 import uuid
 import logging
@@ -20,7 +22,7 @@ from app.auth.jwt_auth import jwt_auth
 from app.config import settings
 from app.db import get_db
 from app.models.presentation import ChatRequest
-from app.services import kb_service
+from app.services import chapter_service, kb_service
 from app.services.quota_service import check_genai_quota, check_daily_chat_limit, record_chat_query
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,81 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 _rate: dict[str, list[float]] = defaultdict(list)
 RATE_LIMIT = 30  # messages per minute
 RATE_WINDOW = 60  # seconds
+
+# Qdrant emits "expected dim: 1536, got 1024" when the collection's vector
+# size doesn't match the active embedder. We detect this and auto-trigger a
+# force-recreate reindex so the KB self-heals after an embed-model swap.
+# The regex tracks Qdrant's raw error tokens — if VectorDB ever rewrites
+# these messages, this detector silently stops working (the chat would
+# revert to surfacing the raw error). Update _DIM_MISMATCH_RE alongside
+# any VectorDB error-format change.
+_DIM_MISMATCH_RE = re.compile(
+    r"expected dim:\s*(\d+).{0,60}?got\s*(\d+)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# kb_names currently being auto-healed — prevents N concurrent chats from
+# triggering N redundant reindexes for the same stale collection.
+_healing_in_progress: set[str] = set()
+
+# Strong references to in-flight heal tasks. asyncio.create_task only weak-
+# refs the returned task, so without this the task can be garbage-collected
+# mid-reindex. Tasks self-remove via add_done_callback.
+_heal_tasks: set[asyncio.Task] = set()
+
+
+def _parse_dim_mismatch(error_text: str | None) -> tuple[int, int] | None:
+    """Return (expected_dim, got_dim) if the Qdrant vector-dim-mismatch
+    error pattern is present, else None."""
+    if not error_text:
+        return None
+    m = _DIM_MISMATCH_RE.search(error_text)
+    if not m:
+        return None
+    try:
+        return int(m.group(1)), int(m.group(2))
+    except (TypeError, ValueError):
+        return None
+
+
+def _schedule_dim_autoheal(
+    *, presentation_id: str, tenant_id: str, user_id: str, kb_name: str
+) -> bool:
+    """Fire-and-forget force-recreate reindex when the KB collection has
+    a stale embedding dim. Returns True if a heal was scheduled, False if
+    one is already running for this kb."""
+    if kb_name in _healing_in_progress:
+        return False
+    _healing_in_progress.add(kb_name)
+
+    async def _run():
+        try:
+            await chapter_service.reindex_presentation(
+                presentation_id, tenant_id, user_id, force_recreate=True
+            )
+        except Exception:
+            logger.exception(
+                "Auto-heal reindex failed for presentation=%s kb=%s",
+                presentation_id, kb_name,
+            )
+        finally:
+            _healing_in_progress.discard(kb_name)
+
+    try:
+        task = asyncio.create_task(_run())
+    except RuntimeError:
+        # No running event loop — should not happen inside a FastAPI
+        # request handler, but unwind the in-progress marker so a later
+        # request can retry rather than getting permanently locked out.
+        _healing_in_progress.discard(kb_name)
+        logger.exception(
+            "Failed to schedule auto-heal task for kb=%s presentation=%s",
+            kb_name, presentation_id,
+        )
+        return False
+    _heal_tasks.add(task)
+    task.add_done_callback(_heal_tasks.discard)
+    return True
 
 
 def _check_rate(ip: str):
@@ -203,6 +280,30 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
 
                 elif evt_type == "stream_error":
                     error_msg = evt.get("error", "Unknown error")
+                    dims = _parse_dim_mismatch(error_msg)
+                    if dims is not None:
+                        expected, got = dims
+                        scheduled = _schedule_dim_autoheal(
+                            presentation_id=presentation_id,
+                            tenant_id=tenant_id,
+                            user_id=user_id,
+                            kb_name=kb_name,
+                        )
+                        logger.warning(
+                            "Stale Qdrant dim for kb=%s presentation=%s: "
+                            "collection=%d, embedder=%d — auto-heal %s",
+                            kb_name, presentation_id, expected, got,
+                            "scheduled" if scheduled else "already in progress",
+                        )
+                        yield {
+                            "event": "error",
+                            "data": (
+                                "The knowledge base is being rebuilt to use the "
+                                "current embedding model. Please retry in a few "
+                                "minutes."
+                            ),
+                        }
+                        return
                     logger.error(f"VectorDB stream error for kb={kb_name}: {error_msg}")
                     yield {"event": "error", "data": error_msg}
                     return
