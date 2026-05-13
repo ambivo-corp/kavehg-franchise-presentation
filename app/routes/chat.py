@@ -69,6 +69,45 @@ def _parse_dim_mismatch(error_text: str | None) -> tuple[int, int] | None:
         return None
 
 
+def _maybe_handle_dim_mismatch(
+    payload: str | None,
+    *,
+    presentation_id: str,
+    tenant_id: str,
+    user_id: str,
+    kb_name: str,
+) -> str | None:
+    """If `payload` carries Qdrant's dim-mismatch error, schedule an
+    auto-heal reindex (deduped per-kb) and return the user-facing
+    rebuild message. Otherwise return None.
+
+    Detection lives here so both stream_chunk (where VectorDB actually
+    delivers the upsert/query failure today) and stream_error (where
+    VectorDB might emit it after future error-routing changes) share
+    one code path.
+    """
+    dims = _parse_dim_mismatch(payload)
+    if dims is None:
+        return None
+    expected, got = dims
+    scheduled = _schedule_dim_autoheal(
+        presentation_id=presentation_id,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        kb_name=kb_name,
+    )
+    logger.warning(
+        "Stale Qdrant dim for kb=%s presentation=%s: "
+        "collection=%d, embedder=%d — auto-heal %s",
+        kb_name, presentation_id, expected, got,
+        "scheduled" if scheduled else "already in progress",
+    )
+    return (
+        "The knowledge base is being rebuilt to use the current "
+        "embedding model. Please retry in a few minutes."
+    )
+
+
 def _schedule_dim_autoheal(
     *, presentation_id: str, tenant_id: str, user_id: str, kb_name: str
 ) -> bool:
@@ -226,6 +265,22 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
 
                 if evt_type == "stream_chunk":
                     text = evt.get("text", "")
+                    # VectorDB delivers query/upsert failures inline as a
+                    # stream_chunk whose text holds the raw Qdrant error
+                    # ("Wrong input: Vector dimension error: ..."). Catch
+                    # it here so the chat surfaces a clean rebuild
+                    # message and self-heals, instead of printing the
+                    # raw error to the user.
+                    rebuild_msg = _maybe_handle_dim_mismatch(
+                        text,
+                        presentation_id=presentation_id,
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        kb_name=kb_name,
+                    )
+                    if rebuild_msg is not None:
+                        yield {"event": "error", "data": rebuild_msg}
+                        return
                     if text:
                         yield {"event": "chunk", "data": text}
 
@@ -280,29 +335,15 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
 
                 elif evt_type == "stream_error":
                     error_msg = evt.get("error", "Unknown error")
-                    dims = _parse_dim_mismatch(error_msg)
-                    if dims is not None:
-                        expected, got = dims
-                        scheduled = _schedule_dim_autoheal(
-                            presentation_id=presentation_id,
-                            tenant_id=tenant_id,
-                            user_id=user_id,
-                            kb_name=kb_name,
-                        )
-                        logger.warning(
-                            "Stale Qdrant dim for kb=%s presentation=%s: "
-                            "collection=%d, embedder=%d — auto-heal %s",
-                            kb_name, presentation_id, expected, got,
-                            "scheduled" if scheduled else "already in progress",
-                        )
-                        yield {
-                            "event": "error",
-                            "data": (
-                                "The knowledge base is being rebuilt to use the "
-                                "current embedding model. Please retry in a few "
-                                "minutes."
-                            ),
-                        }
+                    rebuild_msg = _maybe_handle_dim_mismatch(
+                        error_msg,
+                        presentation_id=presentation_id,
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        kb_name=kb_name,
+                    )
+                    if rebuild_msg is not None:
+                        yield {"event": "error", "data": rebuild_msg}
                         return
                     logger.error(f"VectorDB stream error for kb={kb_name}: {error_msg}")
                     yield {"event": "error", "data": error_msg}
