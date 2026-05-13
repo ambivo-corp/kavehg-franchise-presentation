@@ -217,6 +217,24 @@ async def _serve_presentation(
                 status_code=401,
                 detail="This page requires an Ambivo session.",
             )
+        if doc.get("access_tenant_only") and user.get("tenant_id") != doc.get("tenant_id"):
+            logger.warning(
+                "Cross-tenant access denied on slug=%s: requester tenant=%s, owner tenant=%s, requester userid=%s",
+                slug,
+                user.get("tenant_id"),
+                doc.get("tenant_id"),
+                user.get("userid"),
+            )
+            accept = (request.headers.get("accept") or "").lower()
+            if "application/json" in accept and "text/html" not in accept:
+                return JSONResponse(
+                    {"detail": "This page is restricted to its creator's organization."},
+                    status_code=403,
+                )
+            raise HTTPException(
+                status_code=403,
+                detail="This page is restricted to its creator's organization.",
+            )
     elif mode == "access_code":
         if _is_access_code_blocked(doc, request, slug):
             return templates.TemplateResponse(

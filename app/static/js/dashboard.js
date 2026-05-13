@@ -897,10 +897,12 @@
     function applyAccessMode(mode) {
       var legacy = document.getElementById("f_access");
       var section = document.getElementById("accessCodesSection");
+      var tenantOnly = document.getElementById("tenantOnlySection");
       var hint = document.getElementById("accessModeHint");
       var isCode = mode === "access_code";
       if (legacy) legacy.checked = isCode;
       if (section) section.style.display = isCode ? "" : "none";
+      if (tenantOnly) tenantOnly.style.display = (mode === "ambivo_session") ? "" : "none";
       if (hint) {
         if (mode === "public") {
           hint.textContent = "No restrictions. The hosted link is the only secret.";
@@ -992,6 +994,8 @@
         if (accessModeSelect) accessModeSelect.value = loadedMode;
         applyAccessMode(loadedMode);
         setAccessCodes(p.access_codes);
+        var tenantOnlyEl = document.getElementById("f_access_tenant_only");
+        if (tenantOnlyEl) tenantOnlyEl.checked = !!p.access_tenant_only;
 
         // Header
         var h = p.header || {};
@@ -1255,6 +1259,7 @@
         return;
       }
 
+      var tenantOnlyInput = document.getElementById("f_access_tenant_only");
       var body = {
         title: document.getElementById("f_title").value.trim(),
         content_type: contentType,
@@ -1263,6 +1268,7 @@
         chat_enabled: document.getElementById("f_chat").checked,
         access_mode: accessMode,
         access_protected: isProtected,
+        access_tenant_only: !!(tenantOnlyInput && tenantOnlyInput.checked && accessMode === "ambivo_session"),
         header: getHeaderFields(),
       };
       var themeData = getThemeFields();

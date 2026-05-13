@@ -18,7 +18,10 @@ from fastapi import (
 from pydantic import BaseModel
 from typing import Dict, Any
 
+from bson import ObjectId
+
 from app.auth.jwt_auth import get_current_user
+from app.db import get_db
 from app.models.presentation import (
     ChapterCreate,
     ChapterDetail,
@@ -30,6 +33,7 @@ from app.models.presentation import (
     PresentationUpdate,
 )
 from app.services import chapter_service, document_converter, kb_service, presentation_service
+from app.services.access_control import can_access
 from app.services.document_converter import (
     ConversionError,
     FileTooLargeError,
@@ -43,6 +47,33 @@ router = APIRouter(prefix="/api/presentations", tags=["presentations"])
 
 def _base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
+
+
+async def _require_access(presentation_id: str, user: Dict[str, Any], priv: str) -> dict:
+    """Fetch a presentation scoped to caller's tenant and enforce
+    record-level access for the given privilege. Returns the raw doc
+    on success; raises HTTPException(400/403/404) on failure.
+
+    All authenticated presentation routes go through this gate so the
+    access_dict semantics are enforced consistently. The doc is
+    returned so callers that already needed it (e.g. /kb-info) can
+    avoid a second fetch.
+    """
+    try:
+        oid = ObjectId(presentation_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid presentation ID format")
+
+    coll = get_db()["content_presentations"]
+    doc = await coll.find_one({"_id": oid, "tenant_id": user["tenant_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Presentation not found")
+    if not can_access(user, doc, priv):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Insufficient privileges ({priv}) on this presentation",
+        )
+    return doc
 
 
 @router.post("", response_model=PresentationResponse, status_code=201)
@@ -67,7 +98,28 @@ async def list_presentations(
     request: Request,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
-    return await presentation_service.list_by_tenant(user["tenant_id"], _base_url(request))
+    all_in_tenant = await presentation_service.list_by_tenant(
+        user["tenant_id"], _base_url(request)
+    )
+    # Tenant admins see everything; otherwise filter to records the
+    # caller has at least R on. Read enforcement happens here at the
+    # listing boundary so a non-admin doesn't see presentations they
+    # cannot open.
+    if user.get("is_tenant_admin"):
+        return all_in_tenant
+    # Re-fetch the raw docs to evaluate access_dict — list_by_tenant
+    # returns response models that drop the field. Single extra query,
+    # restricted to ids we already loaded, keeping cost bounded.
+    if not all_in_tenant:
+        return all_in_tenant
+    coll = get_db()["content_presentations"]
+    ids = [ObjectId(p.id) for p in all_in_tenant]
+    cursor = coll.find(
+        {"_id": {"$in": ids}, "tenant_id": user["tenant_id"]},
+        {"_id": 1, "userid": 1, "user_id": 1, "access_dict": 1},
+    )
+    raw_by_id = {str(d["_id"]): d async for d in cursor}
+    return [p for p in all_in_tenant if can_access(user, raw_by_id.get(p.id, {}), "R")]
 
 
 @router.get("/{presentation_id}", response_model=PresentationDetail)
@@ -76,6 +128,7 @@ async def get_presentation(
     request: Request,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "R")
     try:
         result = await presentation_service.get_by_id(presentation_id, user["tenant_id"], _base_url(request))
     except InvalidId:
@@ -92,6 +145,7 @@ async def update_presentation(
     request: Request,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "U")
     try:
         return await presentation_service.update(
             presentation_id, user["tenant_id"], data, _base_url(request)
@@ -111,6 +165,7 @@ async def delete_presentation(
     presentation_id: str,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "D")
     try:
         await presentation_service.delete(presentation_id, user["tenant_id"])
     except InvalidId:
@@ -125,6 +180,7 @@ async def toggle_publish(
     request: Request,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "U")
     try:
         return await presentation_service.toggle_publish(
             presentation_id, user["tenant_id"], _base_url(request)
@@ -142,6 +198,7 @@ async def list_chat_queries(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
 ):
+    await _require_access(presentation_id, user, "R")
     try:
         return await presentation_service.list_chat_queries(
             presentation_id, user["tenant_id"], page, page_size
@@ -158,6 +215,7 @@ async def delete_chat_query(
     query_id: str,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "U")
     try:
         await presentation_service.delete_chat_query(query_id, presentation_id, user["tenant_id"])
     except InvalidId:
@@ -171,6 +229,7 @@ async def delete_all_chat_queries(
     presentation_id: str,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "U")
     try:
         await presentation_service.delete_all_chat_queries(presentation_id, user["tenant_id"])
     except InvalidId:
@@ -186,6 +245,7 @@ async def upload_logo(
     file: UploadFile = File(...),
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "U")
     try:
         file_data = await file.read()
         return await presentation_service.upload_logo(
@@ -204,6 +264,7 @@ async def delete_logo(
     request: Request,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "U")
     try:
         return await presentation_service.delete_logo(
             presentation_id, user["tenant_id"], _base_url(request)
@@ -235,6 +296,7 @@ async def list_chapters(
     presentation_id: str,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "R")
     try:
         return await chapter_service.list_chapters(presentation_id, user["tenant_id"])
     except ValueError as e:
@@ -255,6 +317,7 @@ async def add_chapter(
     background_tasks: BackgroundTasks,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "U")
     try:
         result = await chapter_service.add_chapter(
             presentation_id, user["tenant_id"], data
@@ -283,6 +346,7 @@ async def get_chapter(
     chapter_id: str,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "R")
     try:
         return await chapter_service.get_chapter(
             presentation_id, chapter_id, user["tenant_id"]
@@ -307,6 +371,7 @@ async def update_chapter(
     background_tasks: BackgroundTasks,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "U")
     try:
         result = await chapter_service.update_chapter(
             presentation_id, chapter_id, user["tenant_id"], data
@@ -344,6 +409,7 @@ async def delete_chapter(
     background_tasks: BackgroundTasks,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "U")
     try:
         await chapter_service.delete_chapter(
             presentation_id, chapter_id, user["tenant_id"]
@@ -377,6 +443,7 @@ async def reorder_chapters(
     data: ReorderRequest,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
+    await _require_access(presentation_id, user, "U")
     try:
         return await chapter_service.reorder_chapters(
             presentation_id, user["tenant_id"], data.chapter_ids
@@ -411,6 +478,7 @@ async def upload_chapter(
     If `title` is omitted, it's derived from the first H1 in the
     converted markdown or the filename stem.
     """
+    await _require_access(presentation_id, user, "U")
     try:
         file_bytes = await file.read()
     except Exception:
@@ -475,6 +543,7 @@ async def bulk_import_chapters(
     Per-file conversion failures don't abort the batch — they're
     reported in `failed`. Triggers a single background reindex.
     """
+    await _require_access(presentation_id, user, "U")
     payload: list[tuple[str, bytes]] = []
     for uf in files:
         try:
@@ -555,9 +624,7 @@ async def kb_info(
     Tenant-scoped: validates the presentation belongs to the calling
     user's tenant before forwarding to VectorDB.
     """
-    from bson import ObjectId
-    from app.db import get_db
-
+    await _require_access(presentation_id, user, "R")
     try:
         oid = ObjectId(presentation_id)
     except (InvalidId, TypeError):
@@ -619,7 +686,8 @@ async def trigger_reindex(
     is stale, e.g. when VectorDB switched embedding models since the
     collection was first created.
     """
-    # Validate the presentation exists + belongs to tenant before scheduling.
+    # Validate access (which also confirms tenant + existence).
+    await _require_access(presentation_id, user, "U")
     try:
         await chapter_service.list_chapters(presentation_id, user["tenant_id"])
     except ValueError as e:

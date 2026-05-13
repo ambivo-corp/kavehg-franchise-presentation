@@ -14,6 +14,7 @@ from slugify import slugify
 from app.db import get_db
 from app.models.presentation import PresentationCreate, PresentationUpdate, PresentationResponse, PresentationDetail, HeaderConfig, ThemeConfig, THEME_PRESETS
 from app.services import kb_service
+from app.services.access_control import default_access_dict_for_creator
 from app.services.html_converter import html_to_markdown, _fallback_strip_tags
 from app.config import settings
 
@@ -124,6 +125,7 @@ def _doc_to_response(doc: dict, base_url: str = "", stats: dict | None = None) -
         chat_enabled=doc.get("chat_enabled", True),
         access_protected=doc.get("access_protected", False),
         access_mode=_effective_access_mode(doc),
+        access_tenant_only=bool(doc.get("access_tenant_only", False)),
         access_codes=doc.get("access_codes", []),
         header=_build_header(doc, base_url),
         theme=_build_theme(doc),
@@ -151,6 +153,7 @@ def _doc_to_detail(doc: dict, base_url: str = "", stats: dict | None = None) -> 
         chat_enabled=doc.get("chat_enabled", True),
         access_protected=doc.get("access_protected", False),
         access_mode=_effective_access_mode(doc),
+        access_tenant_only=bool(doc.get("access_tenant_only", False)),
         access_codes=doc.get("access_codes", []),
         header=_build_header(doc, base_url),
         theme=_build_theme(doc),
@@ -272,11 +275,16 @@ async def create(
         "chat_enabled": data.chat_enabled,
         "access_protected": access_protected,
         "access_mode": access_mode,
+        "access_tenant_only": bool(data.access_tenant_only),
         "access_codes": access_codes,
         "description": data.description,
         "tags": data.tags,
         "header": data.header.model_dump(exclude_none=True) if data.header else {},
         "theme": _resolve_theme(data.theme),
+        # Default: full access for every tenant user. Tighten by editing
+        # access_dict to specific userids — see access_control.py.
+        "access_dict": default_access_dict_for_creator(user_id),
+        "applied_team_ids": [],
         "created_at": now,
         "updated_at": now,
     }
@@ -400,6 +408,16 @@ async def update(
             updates["access_protected"] = False
             if data.access_codes is None:
                 updates["access_codes"] = []
+        # access_tenant_only is only meaningful for ambivo_session.
+        # Clear it when leaving that mode so the DB doesn't carry a
+        # stale flag (mirrors how access_codes are cleared above).
+        if data.access_mode != "ambivo_session":
+            updates["access_tenant_only"] = False
+
+    if data.access_tenant_only is not None:
+        # Caller may explicitly override (e.g. dashboard sends both
+        # access_mode and access_tenant_only in the same PUT).
+        updates["access_tenant_only"] = bool(data.access_tenant_only)
 
     # Access protection — direct code management
     if data.access_codes is not None:

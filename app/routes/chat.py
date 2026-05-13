@@ -204,6 +204,18 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
                 status_code=401,
                 detail="Authentication required for this chat.",
             )
+        if doc.get("access_tenant_only") and ambivo_user.get("tenant_id") != doc.get("tenant_id"):
+            logger.warning(
+                "Cross-tenant chat denied on presentation=%s: requester tenant=%s, owner tenant=%s, requester userid=%s",
+                presentation_id,
+                ambivo_user.get("tenant_id"),
+                doc.get("tenant_id"),
+                ambivo_user.get("userid"),
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="This chat is restricted to its creator's organization.",
+            )
 
     kb_name = doc["kb_name"]
     tenant_id = doc["tenant_id"]

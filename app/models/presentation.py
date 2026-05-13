@@ -108,6 +108,7 @@ class PresentationCreate(BaseModel):
     chat_enabled: bool = False
     access_protected: bool = False
     access_mode: AccessMode | None = None
+    access_tenant_only: bool = False
     num_access_codes: int = 3
     header: HeaderUpdate | None = None
     theme: ThemeUpdate | None = None
@@ -125,6 +126,7 @@ class PresentationUpdate(BaseModel):
     chat_enabled: bool | None = None
     access_protected: bool | None = None
     access_mode: AccessMode | None = None
+    access_tenant_only: bool | None = None
     access_codes: list[str] | None = None
     regenerate_codes: int | None = None
     header: HeaderUpdate | None = None
@@ -144,6 +146,7 @@ class PresentationResponse(BaseModel):
     chat_enabled: bool
     access_protected: bool = False
     access_mode: AccessMode = "public"
+    access_tenant_only: bool = False
     access_codes: list[str] = []
     header: HeaderConfig = HeaderConfig()
     theme: ThemeConfig = ThemeConfig()
