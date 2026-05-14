@@ -292,11 +292,40 @@
   }
 
   function renderInlineMd(text) {
+    if (typeof marked !== "undefined" && marked && typeof marked.parse === "function") {
+      var rawHtml;
+      try {
+        rawHtml = marked.parse(text, { breaks: true, gfm: true });
+      } catch (_) {
+        return renderInlineFallback(text);
+      }
+      var temp = document.createElement("div");
+      temp.innerHTML = rawHtml;
+      temp.querySelectorAll("script,iframe,object,embed").forEach(function (n) { n.remove(); });
+      temp.querySelectorAll("*").forEach(function (n) {
+        Array.from(n.attributes).forEach(function (attr) {
+          if (attr.name.indexOf("on") === 0) n.removeAttribute(attr.name);
+        });
+        if (n.tagName === "A") {
+          if (n.href && /^javascript:/i.test(n.getAttribute("href") || "")) {
+            n.removeAttribute("href");
+          } else if (n.getAttribute("href")) {
+            n.setAttribute("target", "_blank");
+            n.setAttribute("rel", "noopener");
+          }
+        }
+      });
+      return temp.innerHTML;
+    }
+    return renderInlineFallback(text);
+  }
+
+  function renderInlineFallback(text) {
     var s = escapeHtml(text);
     s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
     s = s.replace(/\*(.+?)\*/g, "<em>$1</em>");
     s = s.replace(/`(.+?)`/g, "<code>$1</code>");
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(m, text, url) {
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (m, text, url) {
       if (/^https?:\/\/|^\//.test(url)) return '<a href="' + url + '" target="_blank" rel="noopener">' + text + '</a>';
       return text;
     });

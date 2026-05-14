@@ -148,6 +148,9 @@
     });
   }
 
+  // Populate prev/next href + neighbor titles for the server-rendered chapter.
+  renderChapter(currentSlug, false);
+
   // Highlight code blocks present in the server-rendered initial chapter.
   if (window.hljs && typeof window.hljs.highlightAll === "function") {
     try { window.hljs.highlightAll(); } catch (_) { /* noop */ }

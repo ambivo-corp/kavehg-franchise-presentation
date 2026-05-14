@@ -162,6 +162,10 @@ html.dark .book-search {
   margin-left: auto;
 }
 
+.book-pager-btn[hidden] {
+  display: none;
+}
+
 /* Mobile hamburger */
 .book-sidebar-toggle {
   display: none;
