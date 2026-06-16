@@ -83,7 +83,7 @@
   {% else %}
   {% set framed_html = framed_html + resize_script %}
   {% endif %}
-  <iframe id="htmlFrame" class="html-frame" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" srcdoc="{{ framed_html | e }}"></iframe>
+  <iframe id="htmlFrame" class="html-frame" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads" srcdoc="{{ framed_html | e }}"></iframe>
   {% else %}
   <article class="content">
     {{ html_content | safe }}
