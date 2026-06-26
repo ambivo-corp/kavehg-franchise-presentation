@@ -370,6 +370,70 @@ async def delete_chapter(
     return True
 
 
+async def delete_all_chapters(
+    presentation_id: str, tenant_id: str, user_id: str
+) -> dict:
+    """Delete the KB collection first, then remove every chapter.
+
+    Order matters: we drop the VectorDB collection up front so the
+    presentation's knowledge base is cleaned out before the chapter
+    content that backs it disappears. The KB delete is best-effort — a
+    missing or already-deleted collection should not block clearing the
+    chapters array, so we log and continue.
+
+    Returns a summary {deleted: <count>, kb_deleted: <bool>}.
+    """
+    doc = await _load_presentation(presentation_id, tenant_id)
+    chapters = list(doc.get("chapters") or [])
+    count = len(chapters)
+
+    # 1. Clean the KB first so vectors don't outlive the source content.
+    kb_name = doc.get("kb_name")
+    kb_deleted = False
+    if kb_name:
+        async with _kb_lock(kb_name):
+            try:
+                await kb_service.delete_kb(kb_name, tenant_id, user_id)
+                kb_deleted = True
+                logger.info(
+                    "Deleted KB %s before clearing all chapters of %s",
+                    kb_name,
+                    presentation_id,
+                )
+            except Exception:
+                logger.exception(
+                    "delete_kb failed for %s during delete-all; "
+                    "clearing chapters anyway",
+                    kb_name,
+                )
+
+    if not chapters:
+        return {"deleted": 0, "kb_deleted": kb_deleted}
+
+    # 2. Clear the chapters array.
+    now = datetime.now(timezone.utc)
+    coll = get_db()[COLLECTION]
+    result = await coll.update_one(
+        {"_id": doc["_id"], "tenant_id": tenant_id},
+        {"$set": {"chapters": [], "updated_at": now}},
+    )
+    if result.matched_count != 1:
+        logger.warning(
+            "delete_all_chapters matched_count=%s for presentation=%s",
+            result.matched_count,
+            presentation_id,
+        )
+        raise ValueError("Delete failed — presentation may have been deleted")
+
+    logger.info(
+        "Deleted all %d chapters from presentation %s (kb_deleted=%s)",
+        count,
+        presentation_id,
+        kb_deleted,
+    )
+    return {"deleted": count, "kb_deleted": kb_deleted}
+
+
 # ---------------------------------------------------------------------------
 # Bulk import
 # ---------------------------------------------------------------------------

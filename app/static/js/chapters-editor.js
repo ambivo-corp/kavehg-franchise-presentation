@@ -235,6 +235,44 @@
     });
   }
 
+  // ----- Delete all chapters (+ KB cleanup) -----
+  const deleteAllBtn = document.getElementById("btnDeleteAllChapters");
+  if (deleteAllBtn) {
+    deleteAllBtn.addEventListener("click", async function () {
+      if (!chapters.length) {
+        setUploadStatus("No chapters to delete.", "info");
+        return;
+      }
+      const ok = confirm(
+        "Delete all " + chapters.length + " chapters?\n\n" +
+        "This first deletes the knowledge-base collection, then removes " +
+        "every chapter. This cannot be undone."
+      );
+      if (!ok) return;
+      deleteAllBtn.disabled = true;
+      const orig = deleteAllBtn.textContent;
+      deleteAllBtn.textContent = "Deleting…";
+      try {
+        const result = await apiFetch(
+          "/api/presentations/" + presentationId + "/chapters",
+          { method: "DELETE" }
+        );
+        const n = (result && result.deleted) || 0;
+        setUploadStatus(
+          "Deleted " + n + " chapter" + (n === 1 ? "" : "s") +
+          " and cleaned the knowledge base.",
+          "ok"
+        );
+        await loadChapters();
+      } catch (err) {
+        setUploadStatus("Delete all failed: " + err.message, "error");
+      } finally {
+        deleteAllBtn.textContent = orig;
+        deleteAllBtn.disabled = false;
+      }
+    });
+  }
+
   // ----- Delete -----
   list.addEventListener("click", async function (e) {
     const target = e.target.closest("[data-action]");

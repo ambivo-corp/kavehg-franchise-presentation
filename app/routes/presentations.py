@@ -430,6 +430,31 @@ async def delete_chapter(
     )
 
 
+@router.delete("/{presentation_id}/chapters")
+async def delete_all_chapters(
+    presentation_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Delete every chapter, first cleaning the associated KB collection.
+
+    The KB is dropped before the chapters are cleared so no vectors
+    outlive their source content. Returns a summary of what was removed.
+    No reindex is scheduled — there is nothing left to index.
+    """
+    await _require_access(presentation_id, user, "U")
+    try:
+        return await chapter_service.delete_all_chapters(
+            presentation_id, user["tenant_id"], user["userid"]
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=_chapter_value_status(str(e)), detail=str(e))
+    except Exception:
+        logger.exception(
+            "Failed to delete all chapters on presentation %s", presentation_id
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 class ReorderRequest(BaseModel):
     chapter_ids: list[str]
 
