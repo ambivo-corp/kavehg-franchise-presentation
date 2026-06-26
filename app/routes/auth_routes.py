@@ -1,9 +1,7 @@
 """
 Login page + login API proxy to ambivo_api /user/login
 """
-import hashlib
 import logging
-import os
 from typing import Dict, Any
 
 import httpx
@@ -12,29 +10,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from app.asset_version import asset_version
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
-
-_STATIC_DIR = "app/static"
-
-
-def _asset_version(*rel_paths: str) -> str:
-    """Short hash of the given static files' mtimes for cache-busting.
-
-    Appended as ?v=<hash> on <script>/<link> tags so the browser fetches
-    a fresh copy whenever a static asset changes (e.g. after a deploy)
-    instead of serving a stale cached version against new HTML.
-    """
-    h = hashlib.md5()
-    for rel in rel_paths:
-        try:
-            h.update(str(os.path.getmtime(os.path.join(_STATIC_DIR, rel))).encode())
-        except OSError:
-            pass
-    return h.hexdigest()[:8]
 
 
 class LoginRequest(BaseModel):
@@ -79,7 +60,7 @@ async def edit_page(request: Request, presentation_id: str):
     return templates.TemplateResponse(request, "edit.html", {
         "api_base": "",
         "presentation_id": presentation_id,
-        "asset_version": _asset_version(
+        "asset_version": asset_version(
             "js/dashboard.js", "js/chapters-editor.js", "css/dashboard.css"
         ),
     })

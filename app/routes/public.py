@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from app.asset_version import asset_version
 from app.auth.jwt_auth import jwt_auth
 from app.db import get_db
 from app.services import presentation_service
@@ -150,6 +151,7 @@ def _render_single_page(
         "presentation_id": str(doc["_id"]),
         "chat_enabled": "true" if doc.get("chat_enabled", True) else "false",
         "api_base": "",
+        "asset_version": asset_version("js/chat-widget.js", "css/page.css"),
     }
     ctx.update(_build_theme_and_header(doc, slug))
     return templates.TemplateResponse(request, "page.html", ctx)
@@ -187,6 +189,9 @@ def _render_book(
         "selected_chapter_slug": selected["slug"],
         "selected_chapter_title": selected["title"],
         "selected_chapter_html": selected["html"],
+        "asset_version": asset_version(
+            "js/chat-widget.js", "js/book-reader.js", "css/page.css", "css/book.css"
+        ),
     }
     ctx.update(_build_theme_and_header(doc, slug))
     return templates.TemplateResponse(request, "book.html", ctx)

@@ -11,8 +11,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family={{ theme_font_family | replace(' ', '+') }}:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   {% endif %}
-  <link rel="stylesheet" href="/static/css/page.css">
-  <link rel="stylesheet" href="/static/css/book.css">
+  <link rel="stylesheet" href="/static/css/page.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/css/book.css?v={{ asset_version }}">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/{% if theme_dark_mode %}github-dark{% else %}github{% endif %}.min.css">
   <style>
     :root {
@@ -121,13 +121,13 @@
 
   <script id="bookChaptersData" type="application/json">{{ chapters | tojson }}</script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <script src="/static/js/book-reader.js"
+  <script src="/static/js/book-reader.js?v={{ asset_version }}"
     data-slug="{{ slug }}"
     data-selected-slug="{{ selected_chapter_slug }}"></script>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script
-    src="/static/js/chat-widget.js"
+    src="/static/js/chat-widget.js?v={{ asset_version }}"
     data-presentation-id="{{ presentation_id }}"
     data-chat-enabled="{{ chat_enabled }}"
     data-api-base="{{ api_base }}"

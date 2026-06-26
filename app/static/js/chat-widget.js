@@ -11,6 +11,9 @@
   var SESSION_KEY = "cp_session_" + presentationId;
   var sessionId = localStorage.getItem(SESSION_KEY) || null;
   var isStreaming = false;
+  // Pending follow-up questions typed while an answer is still streaming.
+  // Dispatched one at a time so we never run two inference requests at once.
+  var queue = [];
 
   // ── Build DOM ──
   var bubble = el("button", { className: "chat-bubble", title: "Ask a question" });
@@ -34,6 +37,9 @@
   header.appendChild(closeBtn);
 
   var messages = el("div", { className: "chat-messages" });
+  // Thin, muted bar above the input for queue status ("N queued\u2026").
+  var statusBar = el("div", { className: "chat-status-bar" });
+  statusBar.style.display = "none";
   var inputArea = el("div", { className: "chat-input-area" });
   var input = el("input", { type: "text", placeholder: "Type your question\u2026" });
   var sendBtn = el("button", {});
@@ -43,6 +49,7 @@
   inputArea.appendChild(sendBtn);
   panel.appendChild(header);
   panel.appendChild(messages);
+  panel.appendChild(statusBar);
   panel.appendChild(inputArea);
 
   document.body.appendChild(bubble);
@@ -67,10 +74,38 @@
 
   function send() {
     var text = input.value.trim();
-    if (!text || isStreaming) return;
+    if (!text) return;
     input.value = "";
     appendMsg("user", text);
-    streamAnswer(text);
+    // Always enqueue. If nothing is in flight, processQueue() dispatches
+    // immediately; otherwise it waits its turn so we never fire two
+    // inference requests concurrently.
+    queue.push(text);
+    if (isStreaming) {
+      updateQueueHint();
+    } else {
+      processQueue();
+    }
+  }
+
+  function processQueue() {
+    if (isStreaming || !queue.length) return;
+    var next = queue.shift();
+    updateQueueHint();
+    streamAnswer(next);
+  }
+
+  function updateQueueHint() {
+    var n = queue.length;
+    if (n > 0) {
+      statusBar.textContent =
+        n + (n === 1 ? " question" : " questions") +
+        " queued · sending one at a time";
+      statusBar.style.display = "block";
+    } else {
+      statusBar.style.display = "none";
+      statusBar.textContent = "";
+    }
   }
 
   function clearMemory() {
@@ -84,12 +119,25 @@
 
   function streamAnswer(question) {
     isStreaming = true;
-    sendBtn.disabled = true;
 
-    var typingEl = el("div", { className: "chat-typing" });
-    typingEl.textContent = "Thinking\u2026";
-    messages.appendChild(typingEl);
+    // Non-obtrusive waiting indicator: a small animated line plus muted
+    // fine print. Kept until the first token actually arrives (not just
+    // when the response opens) so the user isn't left staring at nothing
+    // during inference latency.
+    var waitEl = el("div", { className: "chat-waiting" });
+    var waitDots = el("div", { className: "chat-waiting-dots" });
+    waitDots.textContent = "Working on it";
+    var waitNote = el("div", { className: "chat-waiting-note" });
+    waitNote.textContent =
+      "This can take a few seconds \u2014 you can keep typing, follow-ups are queued.";
+    waitEl.appendChild(waitDots);
+    waitEl.appendChild(waitNote);
+    messages.appendChild(waitEl);
     scrollBottom();
+
+    function removeWait() {
+      if (waitEl.parentNode) waitEl.remove();
+    }
 
     var url = apiBase + "/api/chat/" + presentationId;
     var body = JSON.stringify({ message: question, session_id: sessionId });
@@ -112,9 +160,17 @@
             throw new Error(msg);
           });
         }
-        if (typingEl.parentNode) typingEl.remove();
+        // Defer creating the assistant bubble until the first token so the
+        // waiting indicator stays visible through inference latency.
+        var assistantEl = null;
+        function ensureAssistant() {
+          if (!assistantEl) {
+            removeWait();
+            assistantEl = appendMsg("assistant", "");
+          }
+          return assistantEl;
+        }
 
-        var assistantEl = appendMsg("assistant", "");
         var reader = resp.body.getReader();
         var decoder = new TextDecoder();
         var buffer = "";
@@ -156,9 +212,22 @@
                   continue;
                 }
 
+                // Server is throttling — the request is waiting for a free
+                // inference slot. Keep the waiting indicator, just refine
+                // its wording so the user knows it's queued, not stalled.
+                if (currentEvent === "queued") {
+                  if (!assistantEl) {
+                    waitDots.textContent = "Waiting in line";
+                    waitNote.textContent =
+                      "The assistant is busy — your question will start as soon as a slot frees up.";
+                  }
+                  currentEvent = "";
+                  continue;
+                }
+
                 if (currentEvent === "error") {
-                  fullText = "Sorry, an error occurred. Please try again.";
-                  assistantEl.innerHTML = renderInlineMd(fullText);
+                  fullText = data || "Sorry, an error occurred. Please try again.";
+                  ensureAssistant().innerHTML = renderInlineMd(fullText);
                   currentEvent = "";
                   continue;
                 }
@@ -167,7 +236,7 @@
                   try {
                     var sources = JSON.parse(data);
                     if (Array.isArray(sources) && sources.length) {
-                      renderSources(assistantEl, sources);
+                      renderSources(ensureAssistant(), sources);
                     }
                   } catch (parseErr) {
                     // Non-JSON sources payload — ignore silently
@@ -178,7 +247,7 @@
 
                 // chunk or start — append text (preserving spaces)
                 fullText += data;
-                assistantEl.innerHTML = renderInlineMd(fullText);
+                ensureAssistant().innerHTML = renderInlineMd(fullText);
                 scrollBottom();
                 currentEvent = "";
               }
@@ -188,17 +257,25 @@
         }
         read();
 
+        var finished = false;
         function finish() {
+          if (finished) return;
+          finished = true;
+          removeWait();
           isStreaming = false;
-          sendBtn.disabled = false;
-          input.focus();
+          // Dispatch the next queued question, if any; otherwise refocus.
+          if (queue.length) {
+            processQueue();
+          } else {
+            input.focus();
+          }
         }
       })
       .catch(function (err) {
-        if (typingEl.parentNode) typingEl.remove();
+        removeWait();
         appendMsg("assistant", err.message || "Sorry, something went wrong. Please try again.");
         isStreaming = false;
-        sendBtn.disabled = false;
+        processQueue();
       });
   }
 

@@ -34,6 +34,10 @@ class Settings(BaseSettings):
 
     # Chat limits
     daily_chat_limit: int = 20
+    # Max chat answers streamed from the inference server at once (global).
+    # Requests beyond this queue for a free slot instead of piling onto the
+    # inferencing backend. Tune up/down to match backend capacity.
+    max_concurrent_chats: int = 4
 
     # AI page generation (Anthropic)
     anthropic_api_key: str = ""

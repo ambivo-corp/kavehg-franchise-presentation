@@ -33,6 +33,12 @@ _rate: dict[str, list[float]] = defaultdict(list)
 RATE_LIMIT = 30  # messages per minute
 RATE_WINDOW = 60  # seconds
 
+# Global cap on how many answers we stream from the inference backend at
+# once. Excess requests await a free slot (FIFO via asyncio.Semaphore's
+# internal waiter queue) rather than hammering the inferencing server in
+# parallel. Created at import; binds to the running loop on first acquire.
+_inference_sem = asyncio.Semaphore(settings.max_concurrent_chats)
+
 # Qdrant emits "expected dim: 1536, got 1024" when the collection's vector
 # size doesn't match the active embedder. We detect this and auto-trigger a
 # force-recreate reindex so the KB self-heals after an embed-model swap.
@@ -252,6 +258,13 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
         except Exception as rec_exc:
             logger.warning("Failed to record chat query: %s", rec_exc)
 
+        # Throttle concurrent inference streams. If no slot is free, tell
+        # the client it's queued (so it can show a "waiting in line" note)
+        # and then block until a slot frees up. Released in finally so a
+        # client disconnect (GeneratorExit) never leaks a permit.
+        if _inference_sem.locked():
+            yield {"event": "queued", "data": "Waiting for an available slot…"}
+        await _inference_sem.acquire()
         try:
             async for line in kb_service.query_kb_stream(
                 kb_name, body.message, session_id, tenant_id, user_id
@@ -373,6 +386,8 @@ async def chat(presentation_id: str, body: ChatRequest, request: Request):
                 type(exc).__name__, exc, kb_name, tenant_id, presentation_id,
             )
             yield {"event": "error", "data": "An error occurred while generating the response."}
+        finally:
+            _inference_sem.release()
         yield {"event": "done", "data": ""}
 
     return EventSourceResponse(event_generator())
