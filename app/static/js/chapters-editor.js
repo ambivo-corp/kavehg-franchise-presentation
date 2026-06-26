@@ -237,27 +237,51 @@
 
   // ----- Delete all chapters (+ KB cleanup) -----
   const deleteAllBtn = document.getElementById("btnDeleteAllChapters");
-  if (deleteAllBtn) {
-    deleteAllBtn.addEventListener("click", async function () {
+  const deleteAllModal = document.getElementById("deleteAllModal");
+  const deleteAllMessage = document.getElementById("deleteAllMessage");
+  const deleteAllClose = document.getElementById("btnDeleteAllClose");
+  const deleteAllCancel = document.getElementById("btnDeleteAllCancel");
+  const deleteAllConfirm = document.getElementById("btnDeleteAllConfirm");
+
+  function closeDeleteAllModal() {
+    if (deleteAllModal) deleteAllModal.style.display = "none";
+  }
+
+  if (deleteAllBtn && deleteAllModal) {
+    deleteAllBtn.addEventListener("click", function () {
       if (!chapters.length) {
         setUploadStatus("No chapters to delete.", "info");
         return;
       }
-      const ok = confirm(
-        "Delete all " + chapters.length + " chapters?\n\n" +
-        "This first deletes the knowledge-base collection, then removes " +
-        "every chapter. This cannot be undone."
-      );
-      if (!ok) return;
-      deleteAllBtn.disabled = true;
-      const orig = deleteAllBtn.textContent;
-      deleteAllBtn.textContent = "Deleting…";
+      if (deleteAllMessage) {
+        deleteAllMessage.textContent =
+          "This will permanently delete all " + chapters.length +
+          " chapter" + (chapters.length === 1 ? "" : "s") + ".";
+      }
+      deleteAllModal.style.display = "flex";
+    });
+  }
+
+  if (deleteAllClose) deleteAllClose.addEventListener("click", closeDeleteAllModal);
+  if (deleteAllCancel) deleteAllCancel.addEventListener("click", closeDeleteAllModal);
+  if (deleteAllModal) {
+    deleteAllModal.addEventListener("click", function (e) {
+      if (e.target === deleteAllModal) closeDeleteAllModal();
+    });
+  }
+
+  if (deleteAllConfirm) {
+    deleteAllConfirm.addEventListener("click", async function () {
+      deleteAllConfirm.disabled = true;
+      const orig = deleteAllConfirm.textContent;
+      deleteAllConfirm.textContent = "Deleting…";
       try {
         const result = await apiFetch(
           "/api/presentations/" + presentationId + "/chapters",
           { method: "DELETE" }
         );
         const n = (result && result.deleted) || 0;
+        closeDeleteAllModal();
         setUploadStatus(
           "Deleted " + n + " chapter" + (n === 1 ? "" : "s") +
           " and cleaned the knowledge base.",
@@ -265,10 +289,11 @@
         );
         await loadChapters();
       } catch (err) {
+        closeDeleteAllModal();
         setUploadStatus("Delete all failed: " + err.message, "error");
       } finally {
-        deleteAllBtn.textContent = orig;
-        deleteAllBtn.disabled = false;
+        deleteAllConfirm.textContent = orig;
+        deleteAllConfirm.disabled = false;
       }
     });
   }

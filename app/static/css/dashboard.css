@@ -40,6 +40,8 @@ nav .user-area span { color: #6b7280; }
 .btn-ghost:hover { background: #f9fafb; }
 .btn-danger-sm { background: none; color: #dc2626; border: none; cursor: pointer; font-size: .8rem; padding: .2rem .5rem; }
 .btn-danger-sm:hover { text-decoration: underline; }
+.btn-danger { background: #dc2626; color: #fff; border-color: #dc2626; }
+.btn-danger:hover { background: #b91c1c; border-color: #b91c1c; }
 
 /* ── Container ── */
 .container { max-width: 960px; margin: 2rem auto; padding: 0 1.25rem; }
