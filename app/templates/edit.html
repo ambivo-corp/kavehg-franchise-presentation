@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Edit Presentation — Ambivo Content Portal</title>
   <link rel="icon" type="image/png" href="/static/img/favicon.png">
-  <link rel="stylesheet" href="/static/css/dashboard.css">
+  <link rel="stylesheet" href="/static/css/dashboard.css?v={{ asset_version }}">
 </head>
 <body data-api="{{ api_base }}">
   <nav>
@@ -377,7 +377,7 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/turndown/dist/turndown.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/turndown-plugin-gfm/dist/turndown-plugin-gfm.js"></script>
-  <script src="/static/js/dashboard.js"></script>
-  <script src="/static/js/chapters-editor.js" data-presentation-id="{{ presentation_id }}"></script>
+  <script src="/static/js/dashboard.js?v={{ asset_version }}"></script>
+  <script src="/static/js/chapters-editor.js?v={{ asset_version }}" data-presentation-id="{{ presentation_id }}"></script>
 </body>
 </html>
