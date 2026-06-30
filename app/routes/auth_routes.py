@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from app.asset_version import asset_version
+from app.auth.jwt_auth import jwt_auth
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -25,13 +26,29 @@ class LoginRequest(BaseModel):
     os: str = "web"
 
 
+class TokenLoginRequest(BaseModel):
+    token: str
+
+
 @router.get("/", response_class=HTMLResponse)
 async def root_redirect(request: Request):
-    """Redirect to dashboard or login based on client-side auth check."""
+    """Adopt the shared .ambivo.com auth cookie (SSO), then route to
+    dashboard or login based on the resulting client-side auth state."""
     return HTMLResponse(
         '<script>'
-        'if(localStorage.getItem("cp_token")){window.location.replace("/dashboard")}'
-        'else{window.location.replace("/login")}'
+        '(async function(){'
+        'function rc(){var n=["auth_token","dev_auth_token"];'
+        'for(var i=0;i<n.length;i++){var m=document.cookie.match(new RegExp("(?:^|; )"+n[i]+"=([^;]+)"));'
+        'if(m)return decodeURIComponent(m[1]);}return null;}'
+        'if(!localStorage.getItem("cp_token")){var t=rc();if(t){try{'
+        'var r=await fetch("/api/auth/from-token",{method:"POST",'
+        'headers:{"Content-Type":"application/json"},body:JSON.stringify({token:t})});'
+        'if(r.ok){var d=await r.json();if(d.result===1&&d.token){'
+        'localStorage.setItem("cp_token",d.token);'
+        'localStorage.setItem("cp_user",JSON.stringify(d.user));}}}catch(e){}}}'
+        'if(localStorage.getItem("cp_token")){window.location.replace("/dashboard");}'
+        'else{window.location.replace("/login");}'
+        '})();'
         '</script>'
     )
 
@@ -113,5 +130,27 @@ async def login_api(request: Request, data: LoginRequest) -> Dict[str, Any]:
             "name": user.get("name") or user.get("formatted_name") or user.get("email"),
             "email": user.get("email"),
             "tenant_id": user.get("tenant_id"),
+        },
+    }
+
+
+@router.post("/api/auth/from-token")
+async def from_token_api(data: TokenLoginRequest) -> Dict[str, Any]:
+    """Validate a shared Ambivo JWT and return a portal session.
+
+    The Ambivo apps store the auth token in a cookie scoped to the parent
+    `.ambivo.com` domain, so it is already present on this subdomain. Since the
+    portal validates tokens with the same shared secret, the cookie token can be
+    adopted directly here — enabling cross-app SSO with no relogin.
+    """
+    claims = jwt_auth.decode_token(data.token)  # raises 401 if invalid/expired
+    return {
+        "result": 1,
+        "token": data.token,
+        "user": {
+            "id": claims.get("userid"),
+            "name": claims.get("email") or claims.get("userid"),
+            "email": claims.get("email"),
+            "tenant_id": claims.get("tenant_id"),
         },
     }

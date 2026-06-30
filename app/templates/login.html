@@ -119,12 +119,47 @@
 
   <script>
   (function () {
-    // Skip login if already authenticated
-    if (localStorage.getItem("cp_token") && localStorage.getItem("cp_user")) {
-      window.location.href = "/dashboard";
-      return;
+    var SSO_COOKIES = ["auth_token", "dev_auth_token"];
+
+    function readAmbivoCookie() {
+      for (var i = 0; i < SSO_COOKIES.length; i++) {
+        var m = document.cookie.match(new RegExp("(?:^|; )" + SSO_COOKIES[i] + "=([^;]+)"));
+        if (m) return decodeURIComponent(m[1]);
+      }
+      return null;
     }
 
+    // Cross-app SSO: if there's no local session but the shared .ambivo.com
+    // auth cookie is present, exchange it for a portal session — no relogin.
+    function ssoAdopt() {
+      if (localStorage.getItem("cp_token")) return Promise.resolve();
+      var token = readAmbivoCookie();
+      if (!token) return Promise.resolve();
+      return fetch("/api/auth/from-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token }),
+      })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (d && d.result === 1 && d.token) {
+            localStorage.setItem("cp_token", d.token);
+            localStorage.setItem("cp_user", JSON.stringify(d.user));
+          }
+        })
+        .catch(function () { /* fall through to manual login */ });
+    }
+
+    ssoAdopt().then(function () {
+      // Skip login if already authenticated (locally or via SSO)
+      if (localStorage.getItem("cp_token") && localStorage.getItem("cp_user")) {
+        window.location.href = "/dashboard";
+        return;
+      }
+      initLoginForm();
+    });
+
+    function initLoginForm() {
     var form = document.getElementById("loginForm");
     var errEl = document.getElementById("error");
     var btn = document.getElementById("submitBtn");
@@ -165,6 +200,7 @@
           btn.textContent = "Sign in";
         });
     });
+    }
   })();
   </script>
 </body>
